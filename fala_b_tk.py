@@ -204,11 +204,22 @@ class FalaBApp(ttk.Frame):
         self.var_transport_km = tk.StringVar(value="0")
         self.var_transport_powrot = tk.BooleanVar(value=True)
 
-        self.var_machine = tk.StringVar(value="–")
         self.var_minimum = tk.StringVar(value="–")
         self.var_weryfikacja = tk.StringVar(value="–")
         self.var_costs = tk.StringVar(value="–")
         self.var_transport_info = tk.StringVar(value="–")
+
+        self.var_bigi_row1 = tk.StringVar(value="C8: – mm | D8: – mm | E8: – mm")
+        self.var_bigi_row2 = tk.StringVar(value="C9: – mm | D9: – mm | E9: – mm")
+        self.var_bigowanie_row1 = tk.StringVar(
+            value="F8: – mm | G8: – mm | H8: – mm | I8: – mm | J8: – mm"
+        )
+        self.var_bigowanie_row2 = tk.StringVar(
+            value="F9: – mm | G9: – mm | H9: – mm | I9: – mm | J9: – mm"
+        )
+        self.var_formatka_dims = tk.StringVar(
+            value="C11 (Długość): – mm | E11 (Wysokość): – mm"
+        )
 
         self.table_params = (
             "Nakład [szt.]",
@@ -256,8 +267,54 @@ class FalaBApp(ttk.Frame):
         ttk.Label(frame_inputs, text="Nakład 3").grid(row=4, column=4, sticky="w", padx=(6, 0), pady=(4, 0))
         ttk.Entry(frame_inputs, textvariable=self.vars_naklad[2], width=10).grid(row=4, column=5, sticky="we")
 
-        frame_costs = ttk.LabelFrame(self, text="Składowe ceny za 1 szt.")
-        frame_costs.grid(row=0, column=1, sticky="nsew", pady=(0, 8))
+        frame_right = ttk.Frame(self)
+        frame_right.grid(row=0, column=1, sticky="nsew", pady=(0, 8))
+        frame_right.columnconfigure(0, weight=1)
+        frame_right.columnconfigure(1, weight=1)
+        frame_right.rowconfigure(0, weight=1)
+
+        frame_machine = ttk.LabelFrame(frame_right, text="Ustawienia maszyny")
+        frame_machine.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        frame_machine.columnconfigure(1, weight=1)
+
+        ttk.Label(frame_machine, text="⚙", font=("TkDefaultFont", 20)).grid(
+            row=0,
+            column=0,
+            rowspan=8,
+            sticky="n",
+            padx=(0, 8),
+            pady=(0, 4),
+        )
+        ttk.Label(frame_machine, text="Bigi", font=bold_font).grid(
+            row=0, column=1, sticky="w"
+        )
+        ttk.Label(frame_machine, textvariable=self.var_bigi_row1).grid(
+            row=1, column=1, sticky="w"
+        )
+        ttk.Separator(frame_machine, orient="horizontal").grid(
+            row=2, column=1, sticky="we", pady=(2, 4)
+        )
+        ttk.Label(frame_machine, textvariable=self.var_bigi_row2).grid(
+            row=3, column=1, sticky="w"
+        )
+        ttk.Label(frame_machine, text="Bigowanie", font=bold_font).grid(
+            row=4, column=1, sticky="w", pady=(6, 0)
+        )
+        ttk.Label(frame_machine, textvariable=self.var_bigowanie_row1).grid(
+            row=5, column=1, sticky="w"
+        )
+        ttk.Label(frame_machine, textvariable=self.var_bigowanie_row2).grid(
+            row=6, column=1, sticky="w"
+        )
+
+        frame_formatka = ttk.LabelFrame(frame_right, text="Formatka (mm)")
+        frame_formatka.grid(row=1, column=0, sticky="nsew", padx=(0, 10), pady=(8, 0))
+        ttk.Label(frame_formatka, textvariable=self.var_formatka_dims).grid(
+            row=0, column=0, sticky="w"
+        )
+
+        frame_costs = ttk.LabelFrame(frame_right, text="Składowe ceny za 1 szt.")
+        frame_costs.grid(row=0, column=1, rowspan=2, sticky="nsew")
         frame_costs.columnconfigure(0, weight=1)
         for col in range(1, 4):
             frame_costs.columnconfigure(col, weight=1)
@@ -316,14 +373,21 @@ class FalaBApp(ttk.Frame):
         frame_results.grid(row=3, column=0, columnspan=2, sticky="nsew")
         frame_results.columnconfigure(0, weight=1)
 
-        ttk.Label(frame_results, textvariable=self.var_machine, justify="left").grid(row=0, column=0, sticky="w", pady=(0, 4))
-        ttk.Label(frame_results, textvariable=self.var_minimum, justify="left").grid(row=1, column=0, sticky="w", pady=(0, 4))
-        ttk.Label(frame_results, textvariable=self.var_weryfikacja, justify="left").grid(row=2, column=0, sticky="w", pady=(0, 4))
-        ttk.Label(frame_results, textvariable=self.var_costs, justify="left").grid(row=3, column=0, sticky="w", pady=(0, 4))
-        ttk.Label(frame_results, textvariable=self.var_transport_info, justify="left").grid(row=4, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(frame_results, textvariable=self.var_minimum, justify="left").grid(
+            row=0, column=0, sticky="w", pady=(0, 4)
+        )
+        ttk.Label(frame_results, textvariable=self.var_weryfikacja, justify="left").grid(
+            row=1, column=0, sticky="w", pady=(0, 4)
+        )
+        ttk.Label(frame_results, textvariable=self.var_costs, justify="left").grid(
+            row=2, column=0, sticky="w", pady=(0, 4)
+        )
+        ttk.Label(frame_results, textvariable=self.var_transport_info, justify="left").grid(
+            row=3, column=0, sticky="w", pady=(0, 8)
+        )
 
         table_frame = ttk.Frame(frame_results)
-        table_frame.grid(row=5, column=0, sticky="nsew")
+        table_frame.grid(row=4, column=0, sticky="nsew")
         table_frame.columnconfigure(0, weight=2)
         for col in range(1, 4):
             table_frame.columnconfigure(col, weight=1)
@@ -423,22 +487,40 @@ class FalaBApp(ttk.Frame):
 
         bigi = wyniki["bigi"]
         bigowe = wyniki["bigowe"]
-        self.var_machine.set(
-            "\n".join(
+        sumy_bigowe = wyniki["sumy_bigowe"]
+
+        self.var_bigi_row1.set(
+            f"C8: {bigi['c8']:.2f} mm | D8: {bigi['d8']:.2f} mm | E8: {bigi['e8']:.2f} mm"
+        )
+        self.var_bigi_row2.set(
+            f"C9: {sumy_bigowe['c9']:.2f} mm | D9: {sumy_bigowe['d9']:.2f} mm | "
+            f"E9: {sumy_bigowe['e9']:.2f} mm"
+        )
+        self.var_bigowanie_row1.set(
+            " | ".join(
                 [
-                    "Ustawienia maszyny:",
-                    (
-                        "Bigi: "
-                        f"{bigi['c8']:.2f} mm | {bigi['d8']:.2f} mm | {bigi['e8']:.2f} mm"
-                    ),
-                    (
-                        "Bigowe: "
-                        f"{bigowe['f8']:.2f} mm | {bigowe['g8']:.2f} mm | {bigowe['h8']:.2f} mm | "
-                        f"{bigowe['i8']:.2f} mm | {bigowe['j8']:.2f} mm"
-                    ),
-                    f"Formatka: {wyniki['formatka_mm']:.2f} mm",
+                    f"F8: {bigowe['f8']:.2f} mm",
+                    f"G8: {bigowe['g8']:.2f} mm",
+                    f"H8: {bigowe['h8']:.2f} mm",
+                    f"I8: {bigowe['i8']:.2f} mm",
+                    f"J8: {bigowe['j8']:.2f} mm",
                 ]
             )
+        )
+        self.var_bigowanie_row2.set(
+            " | ".join(
+                [
+                    f"F9: {sumy_bigowe['f9']:.2f} mm",
+                    f"G9: {sumy_bigowe['g9']:.2f} mm",
+                    f"H9: {sumy_bigowe['h9']:.2f} mm",
+                    f"I9: {sumy_bigowe['i9']:.2f} mm",
+                    f"J9: {sumy_bigowe['j9']:.2f} mm",
+                ]
+            )
+        )
+        self.var_formatka_dims.set(
+            f"C11 (Długość): {wyniki['formatka_mm']:.2f} mm | "
+            f"E11 (Wysokość): {wyniki['wymiar_zewnetrzny_mm']:.2f} mm"
         )
 
         minimum = wyniki["minimum_produkcji"]
