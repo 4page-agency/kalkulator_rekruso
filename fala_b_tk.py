@@ -231,30 +231,30 @@ class FalaBApp(ttk.Frame):
 
         frame_inputs = ttk.LabelFrame(self, text="Parametry kartonu i nakłady")
         frame_inputs.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 8))
-        frame_inputs.columnconfigure(1, weight=1)
-        frame_inputs.columnconfigure(3, weight=1)
+        for col in (1, 3, 5):
+            frame_inputs.columnconfigure(col, weight=1)
 
-        ttk.Label(frame_inputs, text="DŁ [mm] (C5)").grid(row=0, column=0, sticky="w")
+        bold_font = ("TkDefaultFont", 10, "bold")
+        ttk.Label(frame_inputs, text="DŁUGOŚĆ (mm)", font=bold_font).grid(row=0, column=0, sticky="w")
         ttk.Entry(frame_inputs, textvariable=self.var_dl, width=10).grid(row=0, column=1, sticky="we", padx=(0, 6))
-        ttk.Label(frame_inputs, text="SZ [mm] (D5)").grid(row=0, column=2, sticky="w")
-        ttk.Entry(frame_inputs, textvariable=self.var_sz, width=10).grid(row=0, column=3, sticky="we")
+        ttk.Label(frame_inputs, text="SZEROKOŚĆ (mm)", font=bold_font).grid(row=0, column=2, sticky="w", padx=(6, 0))
+        ttk.Entry(frame_inputs, textvariable=self.var_sz, width=10).grid(row=0, column=3, sticky="we", padx=(0, 6))
+        ttk.Label(frame_inputs, text="WYSOKOŚĆ (mm)", font=bold_font).grid(row=0, column=4, sticky="w")
+        ttk.Entry(frame_inputs, textvariable=self.var_wys, width=10).grid(row=0, column=5, sticky="we")
 
-        ttk.Label(frame_inputs, text="WYS [mm] (E5)").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(frame_inputs, textvariable=self.var_wys, width=10).grid(row=1, column=1, sticky="we", padx=(0, 6), pady=(6, 0))
-        ttk.Label(frame_inputs, text="Gramatura [g/m²] (H5)").grid(row=1, column=2, sticky="w", pady=(6, 0))
-        ttk.Entry(frame_inputs, textvariable=self.var_gram, width=10).grid(row=1, column=3, sticky="we", pady=(6, 0))
+        ttk.Label(frame_inputs, text="Gramatura [g/m²]").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(frame_inputs, textvariable=self.var_gram, width=10).grid(row=1, column=1, sticky="we", padx=(0, 6), pady=(6, 0))
+        ttk.Label(frame_inputs, text="Cena surowca 1 m² [zł]").grid(row=1, column=2, sticky="w", padx=(6, 0), pady=(6, 0))
+        ttk.Entry(frame_inputs, textvariable=self.var_cena_m2, width=10).grid(row=1, column=3, sticky="we", padx=(0, 6), pady=(6, 0))
 
-        ttk.Label(frame_inputs, text="Cena surowca 1 m² (I5) [zł]").grid(row=2, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(frame_inputs, textvariable=self.var_cena_m2, width=10).grid(row=2, column=1, sticky="we", padx=(0, 6), pady=(6, 0))
-
-        ttk.Separator(frame_inputs).grid(row=3, column=0, columnspan=4, sticky="we", pady=8)
-        ttk.Label(frame_inputs, text="Nakłady [szt.]").grid(row=4, column=0, columnspan=4, sticky="w")
-        ttk.Label(frame_inputs, text="Nakład 1 (C15)").grid(row=5, column=0, sticky="w", pady=(4, 0))
-        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[0], width=10).grid(row=5, column=1, sticky="we", padx=(0, 6), pady=(4, 0))
-        ttk.Label(frame_inputs, text="Nakład 2 (D15)").grid(row=5, column=2, sticky="w", pady=(4, 0))
-        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[1], width=10).grid(row=5, column=3, sticky="we", pady=(4, 0))
-        ttk.Label(frame_inputs, text="Nakład 3 (E15)").grid(row=6, column=0, sticky="w")
-        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[2], width=10).grid(row=6, column=1, sticky="we", padx=(0, 6))
+        ttk.Separator(frame_inputs).grid(row=2, column=0, columnspan=6, sticky="we", pady=8)
+        ttk.Label(frame_inputs, text="Nakłady [szt.]").grid(row=3, column=0, columnspan=6, sticky="w")
+        ttk.Label(frame_inputs, text="Nakład 1").grid(row=4, column=0, sticky="w", pady=(4, 0))
+        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[0], width=10).grid(row=4, column=1, sticky="we", padx=(0, 6), pady=(4, 0))
+        ttk.Label(frame_inputs, text="Nakład 2").grid(row=4, column=2, sticky="w", padx=(6, 0), pady=(4, 0))
+        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[1], width=10).grid(row=4, column=3, sticky="we", padx=(0, 6), pady=(4, 0))
+        ttk.Label(frame_inputs, text="Nakład 3").grid(row=4, column=4, sticky="w", padx=(6, 0), pady=(4, 0))
+        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[2], width=10).grid(row=4, column=5, sticky="we")
 
         frame_costs = ttk.LabelFrame(self, text="Składowe ceny za 1 szt.")
         frame_costs.grid(row=0, column=1, sticky="nsew", pady=(0, 8))
@@ -423,27 +423,20 @@ class FalaBApp(ttk.Frame):
 
         bigi = wyniki["bigi"]
         bigowe = wyniki["bigowe"]
-        sumy = wyniki["sumy_bigowe"]
         self.var_machine.set(
             "\n".join(
                 [
-                    f"Formatka (C11): {wyniki['formatka_mm']:.2f} mm",
-                    f"Wymiar zewnętrzny (E11): {wyniki['wymiar_zewnetrzny_mm']:.2f} mm",
+                    "Ustawienia maszyny:",
                     (
-                        "Bigi [C8/D8/E8]: "
-                        f"{bigi['c8']:.2f} | {bigi['d8']:.2f} | {bigi['e8']:.2f} mm"
+                        "Bigi: "
+                        f"{bigi['c8']:.2f} mm | {bigi['d8']:.2f} mm | {bigi['e8']:.2f} mm"
                     ),
                     (
-                        "Bigowe [F8/G8/H8/I8/J8]: "
-                        f"{bigowe['f8']:.2f} | {bigowe['g8']:.2f} | {bigowe['h8']:.2f} | "
-                        f"{bigowe['i8']:.2f} | {bigowe['j8']:.2f} mm"
+                        "Bigowe: "
+                        f"{bigowe['f8']:.2f} mm | {bigowe['g8']:.2f} mm | {bigowe['h8']:.2f} mm | "
+                        f"{bigowe['i8']:.2f} mm | {bigowe['j8']:.2f} mm"
                     ),
-                    (
-                        "Sumy [C9–J9]: "
-                        f"{sumy['c9']:.2f} | {sumy['d9']:.2f} | {sumy['e9']:.2f} | "
-                        f"{sumy['f9']:.2f} | {sumy['g9']:.2f} | {sumy['h9']:.2f} | "
-                        f"{sumy['i9']:.2f} | {sumy['j9']:.2f} mm"
-                    ),
+                    f"Formatka: {wyniki['formatka_mm']:.2f} mm",
                 ]
             )
         )
