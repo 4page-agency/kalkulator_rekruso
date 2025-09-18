@@ -147,7 +147,7 @@ class FalaBApp(ttk.Frame):
         self.var_costs = tk.StringVar(value="–")
         self.var_transport_info = tk.StringVar(value="–")
 
-        self.var_bigi_row1 = tk.StringVar(value="C8: – mm | D8: – mm | E8: – mm")
+        self.var_bigi_row1 = tk.StringVar(value="– mm | – mm | – mm")
         self.var_bigi_row2 = tk.StringVar(value="C9: – mm | D9: – mm | E9: – mm")
         self.var_bigowanie_row1 = tk.StringVar(
             value="F8: – mm | G8: – mm | H8: – mm | I8: – mm | J8: – mm"
@@ -381,7 +381,7 @@ class FalaBApp(ttk.Frame):
         sumy_bigowe = wyniki["sumy_bigowe"]
 
         self.var_bigi_row1.set(
-            f"C8: {bigi['c8']:.2f} mm | D8: {bigi['d8']:.2f} mm | E8: {bigi['e8']:.2f} mm"
+            f"{bigi['c8']:.2f} mm | {bigi['d8']:.2f} mm | {bigi['e8']:.2f} mm"
         )
         self.var_bigi_row2.set(
             f"C9: {sumy_bigowe['c9']:.2f} mm | D9: {sumy_bigowe['d9']:.2f} mm | "
