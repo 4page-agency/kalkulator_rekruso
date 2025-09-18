@@ -148,15 +148,17 @@ class FalaBApp(ttk.Frame):
         self.var_transport_info = tk.StringVar(value="–")
 
         self.var_bigi_row1 = tk.StringVar(value="– mm | – mm | – mm")
-        self.var_bigi_row2 = tk.StringVar(value="C9: – mm | D9: – mm | E9: – mm")
+        self.var_bigi_row2 = tk.StringVar(
+            value="Pozycje bigów: – mm | – mm | – mm"
+        )
         self.var_bigowanie_row1 = tk.StringVar(
-            value="F8: – mm | G8: – mm | H8: – mm | I8: – mm | J8: – mm"
+            value="Szerokości segmentów: – mm | – mm | – mm | – mm | – mm"
         )
         self.var_bigowanie_row2 = tk.StringVar(
-            value="F9: – mm | G9: – mm | H9: – mm | I9: – mm | J9: – mm"
+            value="Pozycje segmentów: – mm | – mm | – mm | – mm | – mm"
         )
         self.var_formatka_dims = tk.StringVar(
-            value="C11 (Długość): – mm | E11 (Wysokość): – mm"
+            value="Formatka – długość: – mm | Formatka – wysokość: – mm"
         )
 
     def create_widgets(self) -> None:
@@ -207,9 +209,9 @@ class FalaBApp(ttk.Frame):
         wymiar_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         for row, (label_text, var) in enumerate(
             (
-                ("H12 – Długość", self.var_wymiar_h12),
-                ("I12 – Szerokość", self.var_wymiar_i12),
-                ("J12 – Wysokość", self.var_wymiar_j12),
+                ("Długość zewnętrzna", self.var_wymiar_h12),
+                ("Szerokość zewnętrzna", self.var_wymiar_i12),
+                ("Wysokość zewnętrzna", self.var_wymiar_j12),
             )
         ):
             ttk.Label(wymiar_frame, text=label_text, font=bold_font).grid(
@@ -223,8 +225,8 @@ class FalaBApp(ttk.Frame):
         paletyzacja_frame.grid(row=0, column=2, sticky="nsew")
         for row, (label_text, var) in enumerate(
             (
-                ("Długość (I19)", self.var_paletyzacja_dl),
-                ("Szerokość (J19)", self.var_paletyzacja_sz),
+                ("Długość paletyzacyjna", self.var_paletyzacja_dl),
+                ("Szerokość paletyzacyjna", self.var_paletyzacja_sz),
             )
         ):
             ttk.Label(paletyzacja_frame, text=label_text, font=bold_font).grid(
@@ -284,18 +286,18 @@ class FalaBApp(ttk.Frame):
         for col in range(0, 6):
             frame_ops.columnconfigure(col, weight=1)
 
-        ttk.Label(frame_ops, text="SLOTER (C25) [zł/partia]").grid(row=0, column=0, sticky="w")
+        ttk.Label(frame_ops, text="SLOTER [zł/partia]").grid(row=0, column=0, sticky="w")
         ttk.Entry(frame_ops, textvariable=self.var_sloter, width=10).grid(row=0, column=1, sticky="we", padx=(0, 8))
-        ttk.Label(frame_ops, text="ROTACJA (D25)").grid(row=0, column=2, sticky="w")
+        ttk.Label(frame_ops, text="ROTACJA [zł/partia]").grid(row=0, column=2, sticky="w")
         ttk.Entry(frame_ops, textvariable=self.var_rotacja, width=10).grid(row=0, column=3, sticky="we", padx=(0, 8))
-        ttk.Label(frame_ops, text="Inne (E25/F25) [zł/partia]").grid(row=0, column=4, sticky="w")
+        ttk.Label(frame_ops, text="DRUK [zł/partia]").grid(row=0, column=4, sticky="w")
         ttk.Entry(frame_ops, textvariable=self.var_druk, width=10).grid(row=0, column=5, sticky="we")
 
-        ttk.Label(frame_ops, text="Dodatkowe koszty (F25)").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(frame_ops, text="Pozostałe koszty [zł/partia]").grid(row=1, column=0, sticky="w", pady=(6, 0))
         ttk.Entry(frame_ops, textvariable=self.var_inne, width=10).grid(row=1, column=1, sticky="we", padx=(0, 8), pady=(6, 0))
-        ttk.Label(frame_ops, text="KLEJENIE / szt. (G25)").grid(row=1, column=2, sticky="w", pady=(6, 0))
+        ttk.Label(frame_ops, text="KLEJENIE / szt.").grid(row=1, column=2, sticky="w", pady=(6, 0))
         ttk.Entry(frame_ops, textvariable=self.var_klejenie_szt, width=10).grid(row=1, column=3, sticky="we", padx=(0, 8), pady=(6, 0))
-        ttk.Label(frame_ops, text="S+K [% od materiału] (A19)").grid(
+        ttk.Label(frame_ops, text="S+K [% od materiału]").grid(
             row=1, column=4, sticky="w", pady=(6, 0)
         )
         ttk.Entry(frame_ops, textvariable=self.var_slot_klejenie_proc, width=10).grid(
@@ -305,7 +307,7 @@ class FalaBApp(ttk.Frame):
         ttk.Separator(frame_ops).grid(row=2, column=0, columnspan=6, sticky="we", pady=8)
         ttk.Label(frame_ops, text="Transport – stawka zł/km").grid(row=3, column=0, sticky="w")
         ttk.Entry(frame_ops, textvariable=self.var_transport_stawka, width=10).grid(row=3, column=1, sticky="we", padx=(0, 8))
-        ttk.Label(frame_ops, text="Dystans [km] (C28)").grid(row=3, column=2, sticky="w")
+        ttk.Label(frame_ops, text="Dystans [km]").grid(row=3, column=2, sticky="w")
         ttk.Entry(frame_ops, textvariable=self.var_transport_km, width=10).grid(row=3, column=3, sticky="we", padx=(0, 8))
         ttk.Checkbutton(frame_ops, text="Uwzględnij powrót", variable=self.var_transport_powrot).grid(row=3, column=4, columnspan=2, sticky="w")
 
@@ -348,8 +350,8 @@ class FalaBApp(ttk.Frame):
 
             sloter = self._parse_float_optional(self.var_sloter, "SLOTER")
             rotacja = self._parse_float_optional(self.var_rotacja, "ROTACJA")
-            druk = self._parse_float_optional(self.var_druk, "Dodatkowe koszty (E25)")
-            inne = self._parse_float_optional(self.var_inne, "Dodatkowe koszty (F25)")
+            druk = self._parse_float_optional(self.var_druk, "Koszt druku")
+            inne = self._parse_float_optional(self.var_inne, "Pozostałe koszty")
             klejenie_szt = self._parse_float_optional(self.var_klejenie_szt, "KLEJENIE / szt.")
 
             stawka_km = self._parse_float_optional(self.var_transport_stawka, "Stawka transport")
@@ -384,34 +386,42 @@ class FalaBApp(ttk.Frame):
             f"{bigi['c8']:.2f} mm | {bigi['d8']:.2f} mm | {bigi['e8']:.2f} mm"
         )
         self.var_bigi_row2.set(
-            f"C9: {sumy_bigowe['c9']:.2f} mm | D9: {sumy_bigowe['d9']:.2f} mm | "
-            f"E9: {sumy_bigowe['e9']:.2f} mm"
+            "Pozycje bigów: "
+            + " | ".join(
+                [
+                    f"{sumy_bigowe['c9']:.2f} mm",
+                    f"{sumy_bigowe['d9']:.2f} mm",
+                    f"{sumy_bigowe['e9']:.2f} mm",
+                ]
+            )
         )
         self.var_bigowanie_row1.set(
-            " | ".join(
+            "Szerokości segmentów: "
+            + " | ".join(
                 [
-                    f"F8: {bigowe['f8']:.2f} mm",
-                    f"G8: {bigowe['g8']:.2f} mm",
-                    f"H8: {bigowe['h8']:.2f} mm",
-                    f"I8: {bigowe['i8']:.2f} mm",
-                    f"J8: {bigowe['j8']:.2f} mm",
+                    f"{bigowe['f8']:.2f} mm",
+                    f"{bigowe['g8']:.2f} mm",
+                    f"{bigowe['h8']:.2f} mm",
+                    f"{bigowe['i8']:.2f} mm",
+                    f"{bigowe['j8']:.2f} mm",
                 ]
             )
         )
         self.var_bigowanie_row2.set(
-            " | ".join(
+            "Pozycje segmentów: "
+            + " | ".join(
                 [
-                    f"F9: {sumy_bigowe['f9']:.2f} mm",
-                    f"G9: {sumy_bigowe['g9']:.2f} mm",
-                    f"H9: {sumy_bigowe['h9']:.2f} mm",
-                    f"I9: {sumy_bigowe['i9']:.2f} mm",
-                    f"J9: {sumy_bigowe['j9']:.2f} mm",
+                    f"{sumy_bigowe['f9']:.2f} mm",
+                    f"{sumy_bigowe['g9']:.2f} mm",
+                    f"{sumy_bigowe['h9']:.2f} mm",
+                    f"{sumy_bigowe['i9']:.2f} mm",
+                    f"{sumy_bigowe['j9']:.2f} mm",
                 ]
             )
         )
         self.var_formatka_dims.set(
-            f"C11 (Długość): {wyniki['formatka_mm']:.2f} mm | "
-            f"E11 (Wysokość): {wyniki['wymiar_zewnetrzny_mm']:.2f} mm"
+            f"Formatka – długość: {wyniki['formatka_mm']:.2f} mm | "
+            f"Formatka – wysokość: {wyniki['wymiar_zewnetrzny_mm']:.2f} mm"
         )
 
         minimum = wyniki["minimum_produkcji"]
@@ -431,10 +441,10 @@ class FalaBApp(ttk.Frame):
         self.var_costs.set(
             "\n".join(
                 [
-                    f"Zużycie m²/szt. (G5): {wyniki['zuzycie_m2_na_szt']:.3f}",
-                    f"Waga kg/szt. (J5): {wyniki['waga_kg_na_szt']:.3f}",
+                    f"Zużycie m²/szt.: {wyniki['zuzycie_m2_na_szt']:.3f}",
+                    f"Waga kg/szt.: {wyniki['waga_kg_na_szt']:.3f}",
                     (
-                        "Koszt materiału/szt. (A18): "
+                        "Koszt materiału/szt.: "
                         f"{wyniki['koszt_mat_na_szt']:.4f} zł"
                     ),
                     (
