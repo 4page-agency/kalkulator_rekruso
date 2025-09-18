@@ -103,7 +103,7 @@ def oblicz_fala_b(
 class FalaBApp(ttk.Frame):
     def __init__(self, master: tk.Tk):
         super().__init__(master, padding=12)
-        self.master.title("Kalkulator – FALA B (handlowiec)")
+        self.master.title("Kalkulator Rekruso")
         self.grid(sticky="nsew")
         self._init_variables()
         self.last_results: Dict[str, Any] = {}
@@ -150,7 +150,7 @@ class FalaBApp(ttk.Frame):
             value="Pozycje segmentów: – mm | – mm | – mm | – mm | – mm"
         )
         self.var_formatka_dims = tk.StringVar(
-            value="Formatka – długość: – mm | Formatka – wysokość: – mm"
+            value="Długość: – mm | Szerokość: – mm"
         )
 
     def create_widgets(self) -> None:
@@ -432,8 +432,8 @@ class FalaBApp(ttk.Frame):
             )
         )
         self.var_formatka_dims.set(
-            f"Formatka – długość: {wyniki['formatka_mm']:.2f} mm | "
-            f"Formatka – wysokość: {wyniki['wymiar_zewnetrzny_mm']:.2f} mm"
+            f"Długość: {wyniki['formatka_mm']:.2f} mm | "
+            f"Szerokość: {wyniki['wymiar_zewnetrzny_mm']:.2f} mm"
         )
 
         minimum = wyniki["minimum_produkcji"]
@@ -494,7 +494,6 @@ class FalaBApp(ttk.Frame):
         if not self.last_results:
             raise ValueError("Brak danych do wydruku. Najpierw wykonaj obliczenia.")
 
-        client = self.last_results.get("client", {})
         inputs = self.last_results.get("inputs", {})
         wyniki = self.last_results.get("wyniki", {})
 
@@ -504,146 +503,169 @@ class FalaBApp(ttk.Frame):
             except (TypeError, ValueError):
                 return "-"
 
-        lines: list[str] = []
-        lines.append("Kalkulator – FALA B (handlowiec)")
-        lines.append(f"Data wydruku: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-        lines.append("")
-        lines.append("Dane klienta:")
-        lines.append(f"  Nazwa: {client.get('nazwa') or '-'}")
-        lines.append(f"  Adres: {client.get('adres') or '-'}")
-        lines.append(f"  NIP: {client.get('nip') or '-'}")
-        lines.append(f"  E-mail: {client.get('email') or '-'}")
+        rows: list[tuple[str, str, str]] = []
 
-        lines.append("")
-        lines.append("Parametry wejściowe:")
-        lines.append(f"  Długość (DL): {fmt(inputs.get('dl'))} mm")
-        lines.append(f"  Szerokość (SZ): {fmt(inputs.get('sz'))} mm")
-        lines.append(f"  Wysokość (WYS): {fmt(inputs.get('wys'))} mm")
-        lines.append(f"  Gramatura: {fmt(inputs.get('gramatura'))} g/m²")
-        lines.append(f"  Cena surowca 1 m²: {fmt(inputs.get('cena_m2'), 4)} zł")
-        lines.append(
-            f"  Dodatkowe koszty (partia): {fmt(inputs.get('dodatkowe_koszty'))} zł"
+        def add_row(section: str, label: str, value: str) -> None:
+            rows.append((section, label, value))
+
+        add_row("Informacje", "Nazwa programu", "Kalkulator Rekruso")
+        add_row(
+            "Informacje",
+            "Data wydruku",
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
         )
-        lines.append(
-            f"  Transport – stawka: {fmt(inputs.get('stawka_transport'))} zł/km"
+
+        add_row(
+            "Parametry wejściowe",
+            "Długość (DL) [mm]",
+            fmt(inputs.get("dl")),
         )
-        lines.append(f"  Transport – dystans: {fmt(inputs.get('dystans'))} km")
-        lines.append(
-            "  Transport – powrót: " + ("tak" if inputs.get("powrot") else "nie")
+        add_row(
+            "Parametry wejściowe",
+            "Szerokość (SZ) [mm]",
+            fmt(inputs.get("sz")),
+        )
+        add_row(
+            "Parametry wejściowe",
+            "Wysokość (WYS) [mm]",
+            fmt(inputs.get("wys")),
+        )
+        add_row(
+            "Parametry wejściowe",
+            "Gramatura [g/m²]",
+            fmt(inputs.get("gramatura"), 0),
+        )
+        add_row(
+            "Parametry wejściowe",
+            "Cena surowca 1 m² [zł]",
+            fmt(inputs.get("cena_m2"), 4),
+        )
+        add_row(
+            "Parametry wejściowe",
+            "Dodatkowe koszty (partia) [zł]",
+            fmt(inputs.get("dodatkowe_koszty")),
+        )
+        add_row(
+            "Parametry wejściowe",
+            "Transport – stawka [zł/km]",
+            fmt(inputs.get("stawka_transport")),
+        )
+        add_row(
+            "Parametry wejściowe",
+            "Transport – dystans [km]",
+            fmt(inputs.get("dystans")),
+        )
+        add_row(
+            "Parametry wejściowe",
+            "Transport – powrót",
+            "tak" if inputs.get("powrot") else "nie",
         )
 
         bigi = wyniki.get("bigi", {})
         bigowe = wyniki.get("bigowe", {})
         sumy = wyniki.get("sumy_bigowe", {})
-        lines.append("")
-        lines.append("Bigi i bigowanie:")
-        lines.append(
-            "  Bigi: "
-            + ", ".join(
-                [
-                    f"C8={fmt(bigi.get('c8'))} mm",
-                    f"D8={fmt(bigi.get('d8'))} mm",
-                    f"E8={fmt(bigi.get('e8'))} mm",
-                ]
-            )
-        )
-        lines.append(
-            "  Pozycje bigów: "
-            + ", ".join(
-                [
-                    f"C9={fmt(sumy.get('c9'))} mm",
-                    f"D9={fmt(sumy.get('d9'))} mm",
-                    f"E9={fmt(sumy.get('e9'))} mm",
-                ]
-            )
-        )
-        lines.append(
-            "  Szerokości segmentów: "
-            + ", ".join(
-                [
-                    f"F8={fmt(bigowe.get('f8'))} mm",
-                    f"G8={fmt(bigowe.get('g8'))} mm",
-                    f"H8={fmt(bigowe.get('h8'))} mm",
-                    f"I8={fmt(bigowe.get('i8'))} mm",
-                    f"J8={fmt(bigowe.get('j8'))} mm",
-                ]
-            )
-        )
-        lines.append(
-            "  Pozycje segmentów: "
-            + ", ".join(
-                [
-                    f"F9={fmt(sumy.get('f9'))} mm",
-                    f"G9={fmt(sumy.get('g9'))} mm",
-                    f"H9={fmt(sumy.get('h9'))} mm",
-                    f"I9={fmt(sumy.get('i9'))} mm",
-                    f"J9={fmt(sumy.get('j9'))} mm",
-                ]
-            )
+
+        add_row("Bigi", "C8 [mm]", fmt(bigi.get("c8")))
+        add_row("Bigi", "D8 [mm]", fmt(bigi.get("d8")))
+        add_row("Bigi", "E8 [mm]", fmt(bigi.get("e8")))
+
+        add_row("Pozycje bigów", "C9 [mm]", fmt(sumy.get("c9")))
+        add_row("Pozycje bigów", "D9 [mm]", fmt(sumy.get("d9")))
+        add_row("Pozycje bigów", "E9 [mm]", fmt(sumy.get("e9")))
+
+        add_row("Szerokości segmentów", "F8 [mm]", fmt(bigowe.get("f8")))
+        add_row("Szerokości segmentów", "G8 [mm]", fmt(bigowe.get("g8")))
+        add_row("Szerokości segmentów", "H8 [mm]", fmt(bigowe.get("h8")))
+        add_row("Szerokości segmentów", "I8 [mm]", fmt(bigowe.get("i8")))
+        add_row("Szerokości segmentów", "J8 [mm]", fmt(bigowe.get("j8")))
+
+        add_row("Pozycje segmentów", "F9 [mm]", fmt(sumy.get("f9")))
+        add_row("Pozycje segmentów", "G9 [mm]", fmt(sumy.get("g9")))
+        add_row("Pozycje segmentów", "H9 [mm]", fmt(sumy.get("h9")))
+        add_row("Pozycje segmentów", "I9 [mm]", fmt(sumy.get("i9")))
+        add_row("Pozycje segmentów", "J9 [mm]", fmt(sumy.get("j9")))
+
+        add_row("Formatka", "Długość [mm]", fmt(wyniki.get("formatka_mm")))
+        add_row(
+            "Formatka",
+            "Szerokość [mm]",
+            fmt(wyniki.get("wymiar_zewnetrzny_mm")),
         )
 
-        lines.append("")
-        lines.append("Formatka i weryfikacja:")
-        lines.append(
-            f"  Formatka – długość: {fmt(wyniki.get('formatka_mm'))} mm"
-        )
-        lines.append(
-            f"  Formatka – wysokość: {fmt(wyniki.get('wymiar_zewnetrzny_mm'))} mm"
-        )
         weryf = wyniki.get("weryfikacja_zewnetrzna", {})
-        lines.append(f"  Weryfikacja DL: {fmt(weryf.get('dl'))} mm")
-        lines.append(f"  Weryfikacja SZ: {fmt(weryf.get('sz'))} mm")
-        lines.append(f"  Weryfikacja WYS: {fmt(weryf.get('wys'))} mm")
+        add_row("Weryfikacja", "DL [mm]", fmt(weryf.get("dl")))
+        add_row("Weryfikacja", "SZ [mm]", fmt(weryf.get("sz")))
+        add_row("Weryfikacja", "WYS [mm]", fmt(weryf.get("wys")))
 
         paletyzacja = wyniki.get("paletyzacja", {})
-        lines.append("")
-        lines.append("Paletyzacja:")
-        lines.append(
-            f"  Długość paletyzacyjna: {fmt(paletyzacja.get('dlugosc'))} mm"
+        add_row(
+            "Paletyzacja",
+            "Długość paletyzacyjna [mm]",
+            fmt(paletyzacja.get("dlugosc")),
         )
-        lines.append(
-            f"  Szerokość paletyzacyjna: {fmt(paletyzacja.get('szerokosc'))} mm"
+        add_row(
+            "Paletyzacja",
+            "Szerokość paletyzacyjna [mm]",
+            fmt(paletyzacja.get("szerokosc")),
         )
 
         minimum = wyniki.get("minimum_produkcji", {})
-        lines.append("")
-        lines.append("Minimum produkcyjne:")
-        lines.append(f"  AQ: {fmt(minimum.get('aq'), 0)} szt.")
-        lines.append(f"  CON: {fmt(minimum.get('con'), 0)} szt.")
-        lines.append(f"  PG: {fmt(minimum.get('pg'), 0)} szt.")
+        add_row("Minimum produkcyjne", "AQ [szt.]", fmt(minimum.get("aq"), 0))
+        add_row("Minimum produkcyjne", "CON [szt.]", fmt(minimum.get("con"), 0))
+        add_row("Minimum produkcyjne", "PG [szt.]", fmt(minimum.get("pg"), 0))
 
-        lines.append("")
-        lines.append("Zużycie i koszty:")
-        lines.append(
-            f"  Zużycie m²/szt.: {fmt(wyniki.get('zuzycie_m2_na_szt'), 3)}"
+        add_row(
+            "Zużycie i koszty",
+            "Zużycie m²/szt.",
+            fmt(wyniki.get("zuzycie_m2_na_szt"), 3),
         )
-        lines.append(f"  Waga kg/szt.: {fmt(wyniki.get('waga_kg_na_szt'), 3)}")
-        lines.append(
-            f"  Koszt materiału/szt.: {fmt(wyniki.get('koszt_mat_na_szt'), 4)} zł"
+        add_row(
+            "Zużycie i koszty",
+            "Waga kg/szt.",
+            fmt(wyniki.get("waga_kg_na_szt"), 3),
         )
-        lines.append(
-            f"  Dodatkowe koszty (partia): {fmt(wyniki.get('koszty_dodatkowe'))} zł"
+        add_row(
+            "Zużycie i koszty",
+            "Koszt materiału/szt. [zł]",
+            fmt(wyniki.get("koszt_mat_na_szt"), 4),
+        )
+        add_row(
+            "Zużycie i koszty",
+            "Dodatkowe koszty (partia) [zł]",
+            fmt(wyniki.get("koszty_dodatkowe")),
         )
 
         transport = wyniki.get("transport", {})
-        lines.append("")
-        lines.append("Transport:")
-        lines.append(
-            f"  Stawka końcowa: {fmt(transport.get('stawka_pelna'))} zł/km"
+        add_row(
+            "Transport (wynik)",
+            "Stawka końcowa [zł/km]",
+            fmt(transport.get("stawka_pelna")),
         )
-        lines.append(f"  Dystans: {fmt(transport.get('dystans'))} km")
-        lines.append("  Powrót: " + ("tak" if transport.get("powrot") else "nie"))
-        lines.append(
-            f"  Koszt łączny: {fmt(transport.get('koszt_calkowity'))} zł"
+        add_row(
+            "Transport (wynik)",
+            "Dystans [km]",
+            fmt(transport.get("dystans")),
+        )
+        add_row(
+            "Transport (wynik)",
+            "Powrót",
+            "tak" if transport.get("powrot") else "nie",
+        )
+        add_row(
+            "Transport (wynik)",
+            "Koszt łączny [zł]",
+            fmt(transport.get("koszt_calkowity")),
         )
 
-        return "\n".join(lines)
+        csv_lines = ["sep=;", "Sekcja;Parametr;Wartość"]
+        csv_lines.extend(";".join(row) for row in rows)
+        return "\n".join(csv_lines)
 
     @staticmethod
     def _send_to_printer(text: str) -> None:
         temp_path = ""
         with tempfile.NamedTemporaryFile(
-            "w", delete=False, encoding="utf-8", suffix=".txt"
+            "w", delete=False, encoding="utf-8", suffix=".csv"
         ) as temp_file:
             temp_file.write(text)
             temp_path = temp_file.name
