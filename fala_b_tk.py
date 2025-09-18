@@ -86,6 +86,9 @@ def oblicz_fala_b(
     weryfikacja_sz = h8 + 3.0
     weryfikacja_wys = d8 + 2.0
 
+    paletyzacja_dlugosc = f8 + g8
+    paletyzacja_szerokosc = wymiar_zewnetrzny_e11
+
     # --- NAKŁADY I LISTY WEJŚCIOWE ---
     naklady = _ensure_len([int(naklad1), int(naklad2), int(naklad3)], 3, 0)
 
@@ -130,6 +133,7 @@ def oblicz_fala_b(
         "slot_klejenie_proc": slot_klejenie_proc,
         "minimum_produkcji": {"aq": min_aq, "con": min_con, "pg": min_pg},
         "weryfikacja_zewnetrzna": {"dl": weryfikacja_dl, "sz": weryfikacja_sz, "wys": weryfikacja_wys},
+        "paletyzacja": {"dlugosc": paletyzacja_dlugosc, "szerokosc": paletyzacja_szerokosc},
         "naklady": wyniki_nakladow,
         "transport": {
             "stawka_pelna": stawka_pelna,
@@ -177,8 +181,14 @@ class FalaBApp(ttk.Frame):
         self.var_transport_km = tk.StringVar(value="0")
         self.var_transport_powrot = tk.BooleanVar(value=True)
 
-        self.var_minimum = tk.StringVar(value="–")
-        self.var_weryfikacja = tk.StringVar(value="–")
+        self.var_minimum_aq = tk.StringVar(value=": – szt.")
+        self.var_minimum_con = tk.StringVar(value=": – szt.")
+        self.var_minimum_pg = tk.StringVar(value=": – szt.")
+        self.var_wymiar_h12 = tk.StringVar(value=": – mm")
+        self.var_wymiar_i12 = tk.StringVar(value=": – mm")
+        self.var_wymiar_j12 = tk.StringVar(value=": – mm")
+        self.var_paletyzacja_dl = tk.StringVar(value=": – mm")
+        self.var_paletyzacja_sz = tk.StringVar(value=": – mm")
         self.var_costs = tk.StringVar(value="–")
         self.var_transport_info = tk.StringVar(value="–")
 
@@ -321,21 +331,67 @@ class FalaBApp(ttk.Frame):
         frame_results.grid(row=3, column=0, columnspan=2, sticky="nsew")
         frame_results.columnconfigure(0, weight=1)
 
-        ttk.Label(frame_results, textvariable=self.var_minimum, justify="left").grid(
-            row=0, column=0, sticky="w", pady=(0, 4)
-        )
-        ttk.Label(frame_results, textvariable=self.var_weryfikacja, justify="left").grid(
+        summary_frame = ttk.Frame(frame_results)
+        summary_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
+        for col in range(3):
+            summary_frame.columnconfigure(col, weight=1)
+
+        minimum_frame = ttk.LabelFrame(summary_frame, text="Minimum produkcyjne")
+        minimum_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        for row, (label_text, var) in enumerate(
+            (
+                ("AQ", self.var_minimum_aq),
+                ("CON", self.var_minimum_con),
+                ("PG", self.var_minimum_pg),
+            )
+        ):
+            ttk.Label(minimum_frame, text=label_text, font=bold_font).grid(
+                row=row, column=0, sticky="w"
+            )
+            ttk.Label(minimum_frame, textvariable=var).grid(
+                row=row, column=1, sticky="w", padx=(4, 0)
+            )
+
+        wymiar_frame = ttk.LabelFrame(summary_frame, text="Wymiar zewnętrzny")
+        wymiar_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
+        for row, (label_text, var) in enumerate(
+            (
+                ("H12", self.var_wymiar_h12),
+                ("I12", self.var_wymiar_i12),
+                ("J12", self.var_wymiar_j12),
+            )
+        ):
+            ttk.Label(wymiar_frame, text=label_text, font=bold_font).grid(
+                row=row, column=0, sticky="w"
+            )
+            ttk.Label(wymiar_frame, textvariable=var).grid(
+                row=row, column=1, sticky="w", padx=(4, 0)
+            )
+
+        paletyzacja_frame = ttk.LabelFrame(summary_frame, text="Paletyzacja")
+        paletyzacja_frame.grid(row=0, column=2, sticky="nsew")
+        for row, (label_text, var) in enumerate(
+            (
+                ("Długość (I19)", self.var_paletyzacja_dl),
+                ("Szerokość (J19)", self.var_paletyzacja_sz),
+            )
+        ):
+            ttk.Label(paletyzacja_frame, text=label_text, font=bold_font).grid(
+                row=row, column=0, sticky="w"
+            )
+            ttk.Label(paletyzacja_frame, textvariable=var).grid(
+                row=row, column=1, sticky="w", padx=(4, 0)
+            )
+
+        ttk.Label(frame_results, textvariable=self.var_costs, justify="left").grid(
             row=1, column=0, sticky="w", pady=(0, 4)
         )
-        ttk.Label(frame_results, textvariable=self.var_costs, justify="left").grid(
-            row=2, column=0, sticky="w", pady=(0, 4)
-        )
         ttk.Label(frame_results, textvariable=self.var_transport_info, justify="left").grid(
-            row=3, column=0, sticky="w", pady=(0, 8)
+            row=2, column=0, sticky="w", pady=(0, 8)
         )
 
         table_frame = ttk.Frame(frame_results)
-        table_frame.grid(row=4, column=0, sticky="nsew")
+        table_frame.grid(row=3, column=0, sticky="nsew")
         table_frame.columnconfigure(0, weight=2)
         for col in range(1, 4):
             table_frame.columnconfigure(col, weight=1)
@@ -465,18 +521,18 @@ class FalaBApp(ttk.Frame):
         )
 
         minimum = wyniki["minimum_produkcji"]
-        self.var_minimum.set(
-            "Minimum produkcyjne: "
-            f"AQ (A11) {minimum['aq']:.0f} szt | "
-            f"CON (A12) {minimum['con']:.0f} szt | "
-            f"PG (A13) {minimum['pg']:.0f} szt"
-        )
+        self.var_minimum_aq.set(f": {minimum['aq']:.0f} szt.")
+        self.var_minimum_con.set(f": {minimum['con']:.0f} szt.")
+        self.var_minimum_pg.set(f": {minimum['pg']:.0f} szt.")
 
         weryf = wyniki["weryfikacja_zewnetrzna"]
-        self.var_weryfikacja.set(
-            "Weryfikacja wymiarów (H12/I12/J12): "
-            f"dł {weryf['dl']:.2f} mm | sz {weryf['sz']:.2f} mm | wys {weryf['wys']:.2f} mm"
-        )
+        self.var_wymiar_h12.set(f": {weryf['dl']:.2f} mm")
+        self.var_wymiar_i12.set(f": {weryf['sz']:.2f} mm")
+        self.var_wymiar_j12.set(f": {weryf['wys']:.2f} mm")
+
+        paletyzacja = wyniki["paletyzacja"]
+        self.var_paletyzacja_dl.set(f": {paletyzacja['dlugosc']:.2f} mm")
+        self.var_paletyzacja_sz.set(f": {paletyzacja['szerokosc']:.2f} mm")
 
         self.var_costs.set(
             "\n".join(
