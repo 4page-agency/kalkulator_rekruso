@@ -1,7 +1,7 @@
 import tkinter as tk
 from decimal import Decimal, ROUND_HALF_UP
 from tkinter import messagebox, ttk
-from typing import Dict, List
+from typing import Dict
 
 
 def _excel_fixed(value: float, digits: int) -> float:
@@ -11,27 +11,12 @@ def _excel_fixed(value: float, digits: int) -> float:
     quant = Decimal("1").scaleb(-digits)
     return float(Decimal(str(value)).quantize(quant, rounding=ROUND_HALF_UP))
 
-
-def _safe_division(numerator: float, denominator: float) -> float:
-    return numerator / denominator if denominator else 0.0
-
-
-def _ensure_len(values: List[float], size: int, fill: float = 0.0) -> List[float]:
-    out = list(values)
-    if len(out) < size:
-        out.extend([fill] * (size - len(out)))
-    return out[:size]
-
-
 def oblicz_fala_b(
     dl: float,
     sz: float,
     wys: float,
     gramatura: float,
     cena_m2: float,
-    naklad1: int,
-    naklad2: int,
-    naklad3: int,
     sloter_total: float,
     rotacja_total: float,
     druk_total: float,
@@ -89,36 +74,9 @@ def oblicz_fala_b(
     paletyzacja_dlugosc = f8 + g8
     paletyzacja_szerokosc = wymiar_zewnetrzny_e11
 
-    # --- NAKŁADY I LISTY WEJŚCIOWE ---
-    naklady = _ensure_len([int(naklad1), int(naklad2), int(naklad3)], 3, 0)
-
     # --- TRANSPORT ---
     stawka_pelna = stawka_transport_km * (2.0 if transport_powrot else 1.0)
     koszt_transport_calk = stawka_pelna * max(dystans_km, 0.0)
-
-    # --- SUMY DLA KAŻDEGO NAKŁADU ---
-    total_operations = [sloter_total, rotacja_total, druk_total, inne_total]
-    wyniki_nakladow = []
-    for idx, naklad in enumerate(naklady):
-        zuzycie_total = zuzycie_m2 * naklad
-        koszt_mat_total = koszt_mat_na_szt * naklad
-        transport_na_szt = _safe_division(koszt_transport_calk, naklad)
-        operacje_na_szt = sum(_safe_division(val, naklad) for val in total_operations)
-        koszty_dodatkowe_na_szt = operacje_na_szt + klejenie_na_szt
-        koszt_mat_jednostkowy = _safe_division(koszt_mat_total, naklad)
-        koszt_calkowity_na_szt = koszt_mat_jednostkowy + koszty_dodatkowe_na_szt + transport_na_szt
-        wyniki_nakladow.append(
-            {
-                "naklad": naklad,
-                "zuzycie_m2_total": zuzycie_total,
-                "koszt_materialu_total": koszt_mat_total,
-                "koszt_materialu_na_szt": koszt_mat_jednostkowy,
-                "transport_na_szt": transport_na_szt,
-                "koszty_dodatkowe_na_szt": koszty_dodatkowe_na_szt,
-                "koszt_calkowity_na_szt": koszt_calkowity_na_szt,
-                "koszt_partii": koszt_calkowity_na_szt * naklad,
-            }
-        )
 
     return {
         "bigi": {"c8": c8, "d8": d8, "e8": e8},
@@ -134,7 +92,6 @@ def oblicz_fala_b(
         "minimum_produkcji": {"aq": min_aq, "con": min_con, "pg": min_pg},
         "weryfikacja_zewnetrzna": {"dl": weryfikacja_dl, "sz": weryfikacja_sz, "wys": weryfikacja_wys},
         "paletyzacja": {"dlugosc": paletyzacja_dlugosc, "szerokosc": paletyzacja_szerokosc},
-        "naklady": wyniki_nakladow,
         "transport": {
             "stawka_pelna": stawka_pelna,
             "koszt_calkowity": koszt_transport_calk,
@@ -166,8 +123,6 @@ class FalaBApp(ttk.Frame):
         self.var_wys = tk.StringVar(value="200")
         self.var_gram = tk.StringVar(value="675")
         self.var_cena_m2 = tk.StringVar(value="1.11")
-
-        self.vars_naklad = [tk.StringVar(value=wartosc) for wartosc in ("2000", "1500", "500")]
 
         self.var_slot_klejenie_proc = tk.StringVar(value="0.35")
 
@@ -204,21 +159,6 @@ class FalaBApp(ttk.Frame):
             value="C11 (Długość): – mm | E11 (Wysokość): – mm"
         )
 
-        self.table_params = (
-            "Nakład [szt.]",
-            "Zużycie m² (razem)",
-            "Koszt materiału (zł)",
-            "Koszt materiału / szt. (zł)",
-            "Transport / szt. (zł)",
-            "Koszty dodatkowe / szt. (zł)",
-            "Koszt całkowity / szt. (zł)",
-            "Koszt partii (zł)",
-        )
-        self.table_vars: Dict[str, List[tk.StringVar]] = {
-            param: [tk.StringVar(value="–") for _ in range(3)]
-            for param in self.table_params
-        }
-
     def create_widgets(self) -> None:
         self.columnconfigure(0, weight=1, uniform="col")
         self.columnconfigure(1, weight=1, uniform="col")
@@ -242,13 +182,57 @@ class FalaBApp(ttk.Frame):
         ttk.Entry(frame_inputs, textvariable=self.var_cena_m2, width=10).grid(row=1, column=3, sticky="we", padx=(0, 6), pady=(6, 0))
 
         ttk.Separator(frame_inputs).grid(row=2, column=0, columnspan=6, sticky="we", pady=8)
-        ttk.Label(frame_inputs, text="Nakłady [szt.]").grid(row=3, column=0, columnspan=6, sticky="w")
-        ttk.Label(frame_inputs, text="Nakład 1").grid(row=4, column=0, sticky="w", pady=(4, 0))
-        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[0], width=10).grid(row=4, column=1, sticky="we", padx=(0, 6), pady=(4, 0))
-        ttk.Label(frame_inputs, text="Nakład 2").grid(row=4, column=2, sticky="w", padx=(6, 0), pady=(4, 0))
-        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[1], width=10).grid(row=4, column=3, sticky="we", padx=(0, 6), pady=(4, 0))
-        ttk.Label(frame_inputs, text="Nakład 3").grid(row=4, column=4, sticky="w", padx=(6, 0), pady=(4, 0))
-        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[2], width=10).grid(row=4, column=5, sticky="we")
+        summary_frame = ttk.Frame(frame_inputs)
+        summary_frame.grid(row=3, column=0, columnspan=6, sticky="nsew", pady=(8, 0))
+        for col in range(3):
+            summary_frame.columnconfigure(col, weight=1)
+
+        minimum_frame = ttk.LabelFrame(summary_frame, text="Minimum produkcyjne")
+        minimum_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        for row, (label_text, var) in enumerate(
+            (
+                ("AQ", self.var_minimum_aq),
+                ("CON", self.var_minimum_con),
+                ("PG", self.var_minimum_pg),
+            )
+        ):
+            ttk.Label(minimum_frame, text=label_text, font=bold_font).grid(
+                row=row, column=0, sticky="w"
+            )
+            ttk.Label(minimum_frame, textvariable=var).grid(
+                row=row, column=1, sticky="w", padx=(4, 0)
+            )
+
+        wymiar_frame = ttk.LabelFrame(summary_frame, text="Wymiar zewnętrzny")
+        wymiar_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
+        for row, (label_text, var) in enumerate(
+            (
+                ("H12 – Długość", self.var_wymiar_h12),
+                ("I12 – Szerokość", self.var_wymiar_i12),
+                ("J12 – Wysokość", self.var_wymiar_j12),
+            )
+        ):
+            ttk.Label(wymiar_frame, text=label_text, font=bold_font).grid(
+                row=row, column=0, sticky="w"
+            )
+            ttk.Label(wymiar_frame, textvariable=var).grid(
+                row=row, column=1, sticky="w", padx=(4, 0)
+            )
+
+        paletyzacja_frame = ttk.LabelFrame(summary_frame, text="Paletyzacja")
+        paletyzacja_frame.grid(row=0, column=2, sticky="nsew")
+        for row, (label_text, var) in enumerate(
+            (
+                ("Długość (I19)", self.var_paletyzacja_dl),
+                ("Szerokość (J19)", self.var_paletyzacja_sz),
+            )
+        ):
+            ttk.Label(paletyzacja_frame, text=label_text, font=bold_font).grid(
+                row=row, column=0, sticky="w"
+            )
+            ttk.Label(paletyzacja_frame, textvariable=var).grid(
+                row=row, column=1, sticky="w", padx=(4, 0)
+            )
 
         frame_right = ttk.Frame(self)
         frame_right.grid(row=0, column=1, sticky="nsew", pady=(0, 8))
@@ -331,78 +315,12 @@ class FalaBApp(ttk.Frame):
         frame_results.grid(row=3, column=0, columnspan=2, sticky="nsew")
         frame_results.columnconfigure(0, weight=1)
 
-        summary_frame = ttk.Frame(frame_results)
-        summary_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
-        for col in range(3):
-            summary_frame.columnconfigure(col, weight=1)
-
-        minimum_frame = ttk.LabelFrame(summary_frame, text="Minimum produkcyjne")
-        minimum_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        for row, (label_text, var) in enumerate(
-            (
-                ("AQ", self.var_minimum_aq),
-                ("CON", self.var_minimum_con),
-                ("PG", self.var_minimum_pg),
-            )
-        ):
-            ttk.Label(minimum_frame, text=label_text, font=bold_font).grid(
-                row=row, column=0, sticky="w"
-            )
-            ttk.Label(minimum_frame, textvariable=var).grid(
-                row=row, column=1, sticky="w", padx=(4, 0)
-            )
-
-        wymiar_frame = ttk.LabelFrame(summary_frame, text="Wymiar zewnętrzny")
-        wymiar_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
-        for row, (label_text, var) in enumerate(
-            (
-                ("H12", self.var_wymiar_h12),
-                ("I12", self.var_wymiar_i12),
-                ("J12", self.var_wymiar_j12),
-            )
-        ):
-            ttk.Label(wymiar_frame, text=label_text, font=bold_font).grid(
-                row=row, column=0, sticky="w"
-            )
-            ttk.Label(wymiar_frame, textvariable=var).grid(
-                row=row, column=1, sticky="w", padx=(4, 0)
-            )
-
-        paletyzacja_frame = ttk.LabelFrame(summary_frame, text="Paletyzacja")
-        paletyzacja_frame.grid(row=0, column=2, sticky="nsew")
-        for row, (label_text, var) in enumerate(
-            (
-                ("Długość (I19)", self.var_paletyzacja_dl),
-                ("Szerokość (J19)", self.var_paletyzacja_sz),
-            )
-        ):
-            ttk.Label(paletyzacja_frame, text=label_text, font=bold_font).grid(
-                row=row, column=0, sticky="w"
-            )
-            ttk.Label(paletyzacja_frame, textvariable=var).grid(
-                row=row, column=1, sticky="w", padx=(4, 0)
-            )
-
         ttk.Label(frame_results, textvariable=self.var_costs, justify="left").grid(
-            row=1, column=0, sticky="w", pady=(0, 4)
+            row=0, column=0, sticky="w", pady=(0, 4)
         )
         ttk.Label(frame_results, textvariable=self.var_transport_info, justify="left").grid(
-            row=2, column=0, sticky="w", pady=(0, 8)
+            row=1, column=0, sticky="w", pady=(0, 8)
         )
-
-        table_frame = ttk.Frame(frame_results)
-        table_frame.grid(row=3, column=0, sticky="nsew")
-        table_frame.columnconfigure(0, weight=2)
-        for col in range(1, 4):
-            table_frame.columnconfigure(col, weight=1)
-
-        for col, heading in enumerate(["Parametr", "Nakład 1", "Nakład 2", "Nakład 3"]):
-            ttk.Label(table_frame, text=heading, font=("TkDefaultFont", 9, "bold")).grid(row=0, column=col, sticky="we", padx=2, pady=(0, 4))
-
-        for r, param in enumerate(self.table_params, start=1):
-            ttk.Label(table_frame, text=param).grid(row=r, column=0, sticky="w", padx=2, pady=2)
-            for idx, var in enumerate(self.table_vars[param]):
-                ttk.Label(table_frame, textvariable=var).grid(row=r, column=idx + 1, sticky="we", padx=2, pady=2)
 
     def _parse_float(self, var: tk.StringVar, name: str, default: float | None = None) -> float:
         text = str(var.get()).strip().replace(",", ".")
@@ -418,23 +336,6 @@ class FalaBApp(ttk.Frame):
     def _parse_float_optional(self, var: tk.StringVar, name: str) -> float:
         return self._parse_float(var, name, default=0.0)
 
-    def _parse_int(self, var: tk.StringVar, name: str) -> int:
-        text = str(var.get()).strip()
-        if not text:
-            return 0
-        try:
-            return int(float(text.replace(",", ".")))
-        except ValueError as exc:
-            raise ValueError(f"Nieprawidłowa wartość w polu: {name}") from exc
-
-    def _format_number(self, value: float, decimals: int = 2, placeholder: str = "–") -> str:
-        if value is None:
-            return placeholder
-        try:
-            return f"{value:.{decimals}f}"
-        except (TypeError, ValueError):
-            return placeholder
-
     def policz(self) -> None:
         try:
             dl = self._parse_float(self.var_dl, "DŁ")
@@ -443,10 +344,6 @@ class FalaBApp(ttk.Frame):
             gram = self._parse_float(self.var_gram, "Gramatura")
             cena_m2 = self._parse_float(self.var_cena_m2, "Cena 1 m²")
 
-            naklady = [
-                self._parse_int(var, f"Nakład {idx + 1}")
-                for idx, var in enumerate(self.vars_naklad)
-            ]
             slot_proc = self._parse_float_optional(self.var_slot_klejenie_proc, "S+K [%]")
 
             sloter = self._parse_float_optional(self.var_sloter, "SLOTER")
@@ -468,9 +365,6 @@ class FalaBApp(ttk.Frame):
             wys=wys,
             gramatura=gram,
             cena_m2=cena_m2,
-            naklad1=naklady[0],
-            naklad2=naklady[1],
-            naklad3=naklady[2],
             sloter_total=sloter,
             rotacja_total=rotacja,
             druk_total=druk,
@@ -558,26 +452,6 @@ class FalaBApp(ttk.Frame):
             f"dystans {transport['dystans']:.2f} km, powrót: {powrot_txt}. "
             f"Koszt łączny: {transport['koszt_calkowity']:.2f} zł"
         )
-
-        for param in self.table_params:
-            for var in self.table_vars[param]:
-                var.set("–")
-
-        for idx, dane in enumerate(wyniki["naklady"]):
-            self.table_vars["Nakład [szt.]"][idx].set(f"{int(dane['naklad'])}")
-            self.table_vars["Zużycie m² (razem)"][idx].set(self._format_number(dane["zuzycie_m2_total"], 3))
-            self.table_vars["Koszt materiału (zł)"][idx].set(self._format_number(dane["koszt_materialu_total"], 2))
-            self.table_vars["Koszt materiału / szt. (zł)"][idx].set(self._format_number(dane["koszt_materialu_na_szt"], 4))
-            self.table_vars["Transport / szt. (zł)"][idx].set(self._format_number(dane["transport_na_szt"], 4))
-            self.table_vars["Koszty dodatkowe / szt. (zł)"][idx].set(
-                self._format_number(dane["koszty_dodatkowe_na_szt"], 4)
-            )
-            self.table_vars["Koszt całkowity / szt. (zł)"][idx].set(
-                self._format_number(dane["koszt_calkowity_na_szt"], 4)
-            )
-            self.table_vars["Koszt partii (zł)"][idx].set(
-                self._format_number(dane["koszt_partii"], 2)
-            )
 
 
 def main() -> None:
