@@ -1,7 +1,13 @@
+import os
+import subprocess
+import sys
+import tempfile
+import threading
 import tkinter as tk
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from tkinter import messagebox, ttk
-from typing import Dict
+from typing import Any, Dict
 
 
 def _excel_fixed(value: float, digits: int) -> float:
@@ -17,16 +23,11 @@ def oblicz_fala_b(
     wys: float,
     gramatura: float,
     cena_m2: float,
-    sloter_total: float,
-    rotacja_total: float,
-    druk_total: float,
-    inne_total: float,
-    klejenie_na_szt: float,
+    dodatkowe_koszty: float,
     stawka_transport_km: float,
     dystans_km: float,
-    slot_klejenie_proc: float = 0.35,
     transport_powrot: bool = True,
-) -> Dict:
+) -> Dict[str, Any]:
     """
     Przelicza wszystkie zależności z arkusza "FALA B".
     """
@@ -60,7 +61,6 @@ def oblicz_fala_b(
 
     # --- PODSTAWOWE KOSZTY ---
     koszt_mat_na_szt = zuzycie_m2 * cena_m2
-    koszt_sklejenia_na_szt = koszt_mat_na_szt * slot_klejenie_proc
 
     # --- MINIMUM PRODUKCYJNE I WERYFIKACJA ---
     min_aq = 500.0 / formatka_c11 * 1000.0 if formatka_c11 else 0.0
@@ -87,8 +87,7 @@ def oblicz_fala_b(
         "zuzycie_m2_na_szt": zuzycie_m2,
         "waga_kg_na_szt": waga_kg,
         "koszt_mat_na_szt": koszt_mat_na_szt,
-        "koszt_sklejenia_na_szt": koszt_sklejenia_na_szt,
-        "slot_klejenie_proc": slot_klejenie_proc,
+        "koszty_dodatkowe": dodatkowe_koszty,
         "minimum_produkcji": {"aq": min_aq, "con": min_con, "pg": min_pg},
         "weryfikacja_zewnetrzna": {"dl": weryfikacja_dl, "sz": weryfikacja_sz, "wys": weryfikacja_wys},
         "paletyzacja": {"dlugosc": paletyzacja_dlugosc, "szerokosc": paletyzacja_szerokosc},
@@ -97,13 +96,6 @@ def oblicz_fala_b(
             "koszt_calkowity": koszt_transport_calk,
             "dystans": dystans_km,
             "powrot": transport_powrot,
-        },
-        "inne_parametry": {
-            "sloter_total": sloter_total,
-            "rotacja_total": rotacja_total,
-            "druk_total": druk_total,
-            "inne_total": inne_total,
-            "klejenie_na_szt": klejenie_na_szt,
         },
     }
 
@@ -114,23 +106,23 @@ class FalaBApp(ttk.Frame):
         self.master.title("Kalkulator – FALA B (handlowiec)")
         self.grid(sticky="nsew")
         self._init_variables()
+        self.last_results: Dict[str, Any] = {}
         self.create_widgets()
         self.master.bind("<Return>", lambda _event: self.policz())
 
     def _init_variables(self) -> None:
+        self.var_client_name = tk.StringVar()
+        self.var_client_address = tk.StringVar()
+        self.var_client_nip = tk.StringVar()
+        self.var_client_email = tk.StringVar()
+
         self.var_dl = tk.StringVar(value="400")
         self.var_sz = tk.StringVar(value="300")
         self.var_wys = tk.StringVar(value="200")
         self.var_gram = tk.StringVar(value="675")
         self.var_cena_m2 = tk.StringVar(value="1.11")
 
-        self.var_slot_klejenie_proc = tk.StringVar(value="0.35")
-
-        self.var_sloter = tk.StringVar(value="40")
-        self.var_rotacja = tk.StringVar(value="0")
-        self.var_druk = tk.StringVar(value="0")
         self.var_inne = tk.StringVar(value="0")
-        self.var_klejenie_szt = tk.StringVar(value="0.03")
 
         self.var_transport_stawka = tk.StringVar(value="2.5")
         self.var_transport_km = tk.StringVar(value="0")
@@ -165,8 +157,30 @@ class FalaBApp(ttk.Frame):
         self.columnconfigure(0, weight=1, uniform="col")
         self.columnconfigure(1, weight=1, uniform="col")
 
+        frame_client = ttk.LabelFrame(self, text="Dane klienta")
+        frame_client.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        for col in (1, 3):
+            frame_client.columnconfigure(col, weight=1)
+
+        ttk.Label(frame_client, text="Nazwa firmy").grid(row=0, column=0, sticky="w")
+        ttk.Entry(frame_client, textvariable=self.var_client_name).grid(
+            row=0, column=1, sticky="we", padx=(0, 8)
+        )
+        ttk.Label(frame_client, text="Adres").grid(row=0, column=2, sticky="w")
+        ttk.Entry(frame_client, textvariable=self.var_client_address).grid(
+            row=0, column=3, sticky="we"
+        )
+        ttk.Label(frame_client, text="NIP").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(frame_client, textvariable=self.var_client_nip).grid(
+            row=1, column=1, sticky="we", padx=(0, 8), pady=(6, 0)
+        )
+        ttk.Label(frame_client, text="E-mail").grid(row=1, column=2, sticky="w", pady=(6, 0))
+        ttk.Entry(frame_client, textvariable=self.var_client_email).grid(
+            row=1, column=3, sticky="we", pady=(6, 0)
+        )
+
         frame_inputs = ttk.LabelFrame(self, text="Parametry kartonu i nakłady")
-        frame_inputs.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 8))
+        frame_inputs.grid(row=1, column=0, sticky="nsew", padx=(0, 10), pady=(0, 8))
         for col in (1, 3, 5):
             frame_inputs.columnconfigure(col, weight=1)
 
@@ -237,7 +251,7 @@ class FalaBApp(ttk.Frame):
             )
 
         frame_right = ttk.Frame(self)
-        frame_right.grid(row=0, column=1, sticky="nsew", pady=(0, 8))
+        frame_right.grid(row=1, column=1, sticky="nsew", pady=(0, 8))
         frame_right.columnconfigure(0, weight=1)
         frame_right.rowconfigure(0, weight=1)
 
@@ -281,40 +295,49 @@ class FalaBApp(ttk.Frame):
             row=0, column=0, sticky="w"
         )
 
-        frame_ops = ttk.LabelFrame(self, text="Operacje i transport")
-        frame_ops.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
-        for col in range(0, 6):
-            frame_ops.columnconfigure(col, weight=1)
+        frame_costs = ttk.LabelFrame(self, text="Koszty dodatkowe i transport")
+        frame_costs.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        for col in (1, 3):
+            frame_costs.columnconfigure(col, weight=1)
 
-        ttk.Label(frame_ops, text="SLOTER [zł/partia]").grid(row=0, column=0, sticky="w")
-        ttk.Entry(frame_ops, textvariable=self.var_sloter, width=10).grid(row=0, column=1, sticky="we", padx=(0, 8))
-        ttk.Label(frame_ops, text="ROTACJA [zł/partia]").grid(row=0, column=2, sticky="w")
-        ttk.Entry(frame_ops, textvariable=self.var_rotacja, width=10).grid(row=0, column=3, sticky="we", padx=(0, 8))
-        ttk.Label(frame_ops, text="DRUK [zł/partia]").grid(row=0, column=4, sticky="w")
-        ttk.Entry(frame_ops, textvariable=self.var_druk, width=10).grid(row=0, column=5, sticky="we")
-
-        ttk.Label(frame_ops, text="Pozostałe koszty [zł/partia]").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(frame_ops, textvariable=self.var_inne, width=10).grid(row=1, column=1, sticky="we", padx=(0, 8), pady=(6, 0))
-        ttk.Label(frame_ops, text="KLEJENIE / szt.").grid(row=1, column=2, sticky="w", pady=(6, 0))
-        ttk.Entry(frame_ops, textvariable=self.var_klejenie_szt, width=10).grid(row=1, column=3, sticky="we", padx=(0, 8), pady=(6, 0))
-        ttk.Label(frame_ops, text="S+K [% od materiału]").grid(
-            row=1, column=4, sticky="w", pady=(6, 0)
+        ttk.Label(frame_costs, text="Dodatkowe koszty [zł/partia]").grid(row=0, column=0, sticky="w")
+        ttk.Entry(frame_costs, textvariable=self.var_inne, width=10).grid(
+            row=0, column=1, sticky="we", padx=(0, 8)
         )
-        ttk.Entry(frame_ops, textvariable=self.var_slot_klejenie_proc, width=10).grid(
-            row=1, column=5, sticky="we", pady=(6, 0)
+        ttk.Label(frame_costs, text="Transport – stawka zł/km").grid(
+            row=0, column=2, sticky="w"
         )
+        ttk.Entry(frame_costs, textvariable=self.var_transport_stawka, width=10).grid(
+            row=0, column=3, sticky="we"
+        )
+        ttk.Label(frame_costs, text="Dystans [km]").grid(
+            row=1, column=0, sticky="w", pady=(6, 0)
+        )
+        ttk.Entry(frame_costs, textvariable=self.var_transport_km, width=10).grid(
+            row=1, column=1, sticky="we", padx=(0, 8), pady=(6, 0)
+        )
+        ttk.Checkbutton(
+            frame_costs,
+            text="Uwzględnij powrót",
+            variable=self.var_transport_powrot,
+        ).grid(row=1, column=2, columnspan=2, sticky="w", pady=(6, 0))
 
-        ttk.Separator(frame_ops).grid(row=2, column=0, columnspan=6, sticky="we", pady=8)
-        ttk.Label(frame_ops, text="Transport – stawka zł/km").grid(row=3, column=0, sticky="w")
-        ttk.Entry(frame_ops, textvariable=self.var_transport_stawka, width=10).grid(row=3, column=1, sticky="we", padx=(0, 8))
-        ttk.Label(frame_ops, text="Dystans [km]").grid(row=3, column=2, sticky="w")
-        ttk.Entry(frame_ops, textvariable=self.var_transport_km, width=10).grid(row=3, column=3, sticky="we", padx=(0, 8))
-        ttk.Checkbutton(frame_ops, text="Uwzględnij powrót", variable=self.var_transport_powrot).grid(row=3, column=4, columnspan=2, sticky="w")
+        frame_actions = ttk.Frame(self)
+        frame_actions.grid(row=3, column=0, columnspan=2, sticky="we", pady=(0, 8))
+        frame_actions.columnconfigure(0, weight=1)
+        frame_actions.columnconfigure(1, weight=1)
 
-        ttk.Button(self, text="Policz", command=self.policz).grid(row=2, column=0, columnspan=2, sticky="we", pady=4)
+        ttk.Button(frame_actions, text="Policz", command=self.policz).grid(
+            row=0, column=0, sticky="we", padx=(0, 4)
+        )
+        ttk.Button(
+            frame_actions,
+            text="Drukuj podsumowanie",
+            command=self.print_summary,
+        ).grid(row=0, column=1, sticky="we", padx=(4, 0))
 
         frame_results = ttk.LabelFrame(self, text="Wyniki")
-        frame_results.grid(row=3, column=0, columnspan=2, sticky="nsew")
+        frame_results.grid(row=4, column=0, columnspan=2, sticky="nsew")
         frame_results.columnconfigure(0, weight=1)
 
         ttk.Label(frame_results, textvariable=self.var_costs, justify="left").grid(
@@ -345,15 +368,9 @@ class FalaBApp(ttk.Frame):
             wys = self._parse_float(self.var_wys, "WYS")
             gram = self._parse_float(self.var_gram, "Gramatura")
             cena_m2 = self._parse_float(self.var_cena_m2, "Cena 1 m²")
-
-            slot_proc = self._parse_float_optional(self.var_slot_klejenie_proc, "S+K [%]")
-
-            sloter = self._parse_float_optional(self.var_sloter, "SLOTER")
-            rotacja = self._parse_float_optional(self.var_rotacja, "ROTACJA")
-            druk = self._parse_float_optional(self.var_druk, "Koszt druku")
-            inne = self._parse_float_optional(self.var_inne, "Pozostałe koszty")
-            klejenie_szt = self._parse_float_optional(self.var_klejenie_szt, "KLEJENIE / szt.")
-
+            dodatkowe = self._parse_float_optional(
+                self.var_inne, "Dodatkowe koszty"
+            )
             stawka_km = self._parse_float_optional(self.var_transport_stawka, "Stawka transport")
             dystans = self._parse_float_optional(self.var_transport_km, "Dystans km")
             powrot = bool(self.var_transport_powrot.get())
@@ -367,14 +384,9 @@ class FalaBApp(ttk.Frame):
             wys=wys,
             gramatura=gram,
             cena_m2=cena_m2,
-            sloter_total=sloter,
-            rotacja_total=rotacja,
-            druk_total=druk,
-            inne_total=inne,
-            klejenie_na_szt=klejenie_szt,
+            dodatkowe_koszty=dodatkowe,
             stawka_transport_km=stawka_km,
             dystans_km=dystans,
-            slot_klejenie_proc=slot_proc,
             transport_powrot=powrot,
         )
 
@@ -438,22 +450,16 @@ class FalaBApp(ttk.Frame):
         self.var_paletyzacja_dl.set(f": {paletyzacja['dlugosc']:.2f} mm")
         self.var_paletyzacja_sz.set(f": {paletyzacja['szerokosc']:.2f} mm")
 
-        self.var_costs.set(
-            "\n".join(
-                [
-                    f"Zużycie m²/szt.: {wyniki['zuzycie_m2_na_szt']:.3f}",
-                    f"Waga kg/szt.: {wyniki['waga_kg_na_szt']:.3f}",
-                    (
-                        "Koszt materiału/szt.: "
-                        f"{wyniki['koszt_mat_na_szt']:.4f} zł"
-                    ),
-                    (
-                        "S+K {wyniki['slot_klejenie_proc']*100:.1f}% → "
-                        f"{wyniki['koszt_sklejenia_na_szt']:.4f} zł/szt."
-                    ),
-                ]
+        koszt_lines = [
+            f"Zużycie m²/szt.: {wyniki['zuzycie_m2_na_szt']:.3f}",
+            f"Waga kg/szt.: {wyniki['waga_kg_na_szt']:.3f}",
+            f"Koszt materiału/szt.: {wyniki['koszt_mat_na_szt']:.4f} zł",
+        ]
+        if wyniki["koszty_dodatkowe"]:
+            koszt_lines.append(
+                f"Dodatkowe koszty (partia): {wyniki['koszty_dodatkowe']:.2f} zł"
             )
-        )
+        self.var_costs.set("\n".join(koszt_lines))
 
         transport = wyniki["transport"]
         powrot_txt = "tak" if transport["powrot"] else "nie"
@@ -462,6 +468,228 @@ class FalaBApp(ttk.Frame):
             f"dystans {transport['dystans']:.2f} km, powrót: {powrot_txt}. "
             f"Koszt łączny: {transport['koszt_calkowity']:.2f} zł"
         )
+
+        self.last_results = {
+            "client": {
+                "nazwa": self.var_client_name.get().strip(),
+                "adres": self.var_client_address.get().strip(),
+                "nip": self.var_client_nip.get().strip(),
+                "email": self.var_client_email.get().strip(),
+            },
+            "inputs": {
+                "dl": dl,
+                "sz": sz,
+                "wys": wys,
+                "gramatura": gram,
+                "cena_m2": cena_m2,
+                "dodatkowe_koszty": dodatkowe,
+                "stawka_transport": stawka_km,
+                "dystans": dystans,
+                "powrot": powrot,
+            },
+            "wyniki": wyniki,
+        }
+
+    def _build_print_summary(self) -> str:
+        if not self.last_results:
+            raise ValueError("Brak danych do wydruku. Najpierw wykonaj obliczenia.")
+
+        client = self.last_results.get("client", {})
+        inputs = self.last_results.get("inputs", {})
+        wyniki = self.last_results.get("wyniki", {})
+
+        def fmt(value: Any, digits: int = 2) -> str:
+            try:
+                return f"{float(value):.{digits}f}"
+            except (TypeError, ValueError):
+                return "-"
+
+        lines: list[str] = []
+        lines.append("Kalkulator – FALA B (handlowiec)")
+        lines.append(f"Data wydruku: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        lines.append("")
+        lines.append("Dane klienta:")
+        lines.append(f"  Nazwa: {client.get('nazwa') or '-'}")
+        lines.append(f"  Adres: {client.get('adres') or '-'}")
+        lines.append(f"  NIP: {client.get('nip') or '-'}")
+        lines.append(f"  E-mail: {client.get('email') or '-'}")
+
+        lines.append("")
+        lines.append("Parametry wejściowe:")
+        lines.append(f"  Długość (DL): {fmt(inputs.get('dl'))} mm")
+        lines.append(f"  Szerokość (SZ): {fmt(inputs.get('sz'))} mm")
+        lines.append(f"  Wysokość (WYS): {fmt(inputs.get('wys'))} mm")
+        lines.append(f"  Gramatura: {fmt(inputs.get('gramatura'))} g/m²")
+        lines.append(f"  Cena surowca 1 m²: {fmt(inputs.get('cena_m2'), 4)} zł")
+        lines.append(
+            f"  Dodatkowe koszty (partia): {fmt(inputs.get('dodatkowe_koszty'))} zł"
+        )
+        lines.append(
+            f"  Transport – stawka: {fmt(inputs.get('stawka_transport'))} zł/km"
+        )
+        lines.append(f"  Transport – dystans: {fmt(inputs.get('dystans'))} km")
+        lines.append(
+            "  Transport – powrót: " + ("tak" if inputs.get("powrot") else "nie")
+        )
+
+        bigi = wyniki.get("bigi", {})
+        bigowe = wyniki.get("bigowe", {})
+        sumy = wyniki.get("sumy_bigowe", {})
+        lines.append("")
+        lines.append("Bigi i bigowanie:")
+        lines.append(
+            "  Bigi: "
+            + ", ".join(
+                [
+                    f"C8={fmt(bigi.get('c8'))} mm",
+                    f"D8={fmt(bigi.get('d8'))} mm",
+                    f"E8={fmt(bigi.get('e8'))} mm",
+                ]
+            )
+        )
+        lines.append(
+            "  Pozycje bigów: "
+            + ", ".join(
+                [
+                    f"C9={fmt(sumy.get('c9'))} mm",
+                    f"D9={fmt(sumy.get('d9'))} mm",
+                    f"E9={fmt(sumy.get('e9'))} mm",
+                ]
+            )
+        )
+        lines.append(
+            "  Szerokości segmentów: "
+            + ", ".join(
+                [
+                    f"F8={fmt(bigowe.get('f8'))} mm",
+                    f"G8={fmt(bigowe.get('g8'))} mm",
+                    f"H8={fmt(bigowe.get('h8'))} mm",
+                    f"I8={fmt(bigowe.get('i8'))} mm",
+                    f"J8={fmt(bigowe.get('j8'))} mm",
+                ]
+            )
+        )
+        lines.append(
+            "  Pozycje segmentów: "
+            + ", ".join(
+                [
+                    f"F9={fmt(sumy.get('f9'))} mm",
+                    f"G9={fmt(sumy.get('g9'))} mm",
+                    f"H9={fmt(sumy.get('h9'))} mm",
+                    f"I9={fmt(sumy.get('i9'))} mm",
+                    f"J9={fmt(sumy.get('j9'))} mm",
+                ]
+            )
+        )
+
+        lines.append("")
+        lines.append("Formatka i weryfikacja:")
+        lines.append(
+            f"  Formatka – długość: {fmt(wyniki.get('formatka_mm'))} mm"
+        )
+        lines.append(
+            f"  Formatka – wysokość: {fmt(wyniki.get('wymiar_zewnetrzny_mm'))} mm"
+        )
+        weryf = wyniki.get("weryfikacja_zewnetrzna", {})
+        lines.append(f"  Weryfikacja DL: {fmt(weryf.get('dl'))} mm")
+        lines.append(f"  Weryfikacja SZ: {fmt(weryf.get('sz'))} mm")
+        lines.append(f"  Weryfikacja WYS: {fmt(weryf.get('wys'))} mm")
+
+        paletyzacja = wyniki.get("paletyzacja", {})
+        lines.append("")
+        lines.append("Paletyzacja:")
+        lines.append(
+            f"  Długość paletyzacyjna: {fmt(paletyzacja.get('dlugosc'))} mm"
+        )
+        lines.append(
+            f"  Szerokość paletyzacyjna: {fmt(paletyzacja.get('szerokosc'))} mm"
+        )
+
+        minimum = wyniki.get("minimum_produkcji", {})
+        lines.append("")
+        lines.append("Minimum produkcyjne:")
+        lines.append(f"  AQ: {fmt(minimum.get('aq'), 0)} szt.")
+        lines.append(f"  CON: {fmt(minimum.get('con'), 0)} szt.")
+        lines.append(f"  PG: {fmt(minimum.get('pg'), 0)} szt.")
+
+        lines.append("")
+        lines.append("Zużycie i koszty:")
+        lines.append(
+            f"  Zużycie m²/szt.: {fmt(wyniki.get('zuzycie_m2_na_szt'), 3)}"
+        )
+        lines.append(f"  Waga kg/szt.: {fmt(wyniki.get('waga_kg_na_szt'), 3)}")
+        lines.append(
+            f"  Koszt materiału/szt.: {fmt(wyniki.get('koszt_mat_na_szt'), 4)} zł"
+        )
+        lines.append(
+            f"  Dodatkowe koszty (partia): {fmt(wyniki.get('koszty_dodatkowe'))} zł"
+        )
+
+        transport = wyniki.get("transport", {})
+        lines.append("")
+        lines.append("Transport:")
+        lines.append(
+            f"  Stawka końcowa: {fmt(transport.get('stawka_pelna'))} zł/km"
+        )
+        lines.append(f"  Dystans: {fmt(transport.get('dystans'))} km")
+        lines.append("  Powrót: " + ("tak" if transport.get("powrot") else "nie"))
+        lines.append(
+            f"  Koszt łączny: {fmt(transport.get('koszt_calkowity'))} zł"
+        )
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _send_to_printer(text: str) -> None:
+        temp_path = ""
+        with tempfile.NamedTemporaryFile(
+            "w", delete=False, encoding="utf-8", suffix=".txt"
+        ) as temp_file:
+            temp_file.write(text)
+            temp_path = temp_file.name
+
+        def _cleanup(path: str) -> None:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+        try:
+            if sys.platform.startswith("win"):
+                if hasattr(os, "startfile"):
+                    os.startfile(temp_path, "print")  # type: ignore[attr-defined]
+                else:
+                    raise RuntimeError("Brak obsługi drukowania w tym systemie.")
+            elif sys.platform == "darwin":
+                subprocess.run(["lp", temp_path], check=True)
+            else:
+                subprocess.run(["lpr", temp_path], check=True)
+        except FileNotFoundError as exc:
+            raise RuntimeError("Nie znaleziono polecenia drukarki w systemie.") from exc
+        except Exception as exc:
+            raise RuntimeError("Nie udało się wysłać danych do drukarki.") from exc
+        finally:
+            if temp_path:
+                threading.Timer(10.0, _cleanup, args=(temp_path,)).start()
+
+    def print_summary(self) -> None:
+        try:
+            summary = self._build_print_summary()
+        except ValueError as exc:
+            messagebox.showinfo("Brak danych", str(exc))
+            return
+        except Exception as exc:
+            messagebox.showerror(
+                "Błąd", f"Nie udało się przygotować danych do wydruku.\n{exc}"
+            )
+            return
+
+        try:
+            self._send_to_printer(summary)
+        except RuntimeError as exc:
+            messagebox.showerror("Błąd drukowania", str(exc))
+            return
+        messagebox.showinfo("Drukowanie", "Podsumowanie zostało wysłane do drukarki.")
 
 
 def main() -> None:
