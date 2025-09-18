@@ -1,15 +1,56 @@
-
-import math
 import tkinter as tk
-from tkinter import ttk, messagebox
+from decimal import Decimal, ROUND_HALF_UP
+from tkinter import messagebox, ttk
+from typing import Dict, List
 
-# =============== LOGIKA OBLICZEŃ (zachowana jak poprzednio) ===============
 
-def oblicz_fala_b(dl, sz, wys, gramatura, cena_m2, naklad1, naklad2, naklad3, marza_proc, koszt_transport_km, dystans_km, koszt_proc_sklejenie=0.35):
+def _excel_fixed(value: float, digits: int) -> float:
+    """Replikacja działania funkcji FIXED z Excela."""
+    if digits < 0:
+        raise ValueError("Liczba miejsc po przecinku nie może być ujemna.")
+    quant = Decimal("1").scaleb(-digits)
+    return float(Decimal(str(value)).quantize(quant, rounding=ROUND_HALF_UP))
+
+
+def _safe_division(numerator: float, denominator: float) -> float:
+    return numerator / denominator if denominator else 0.0
+
+
+def _ensure_len(values: List[float], size: int, fill: float = 0.0) -> List[float]:
+    out = list(values)
+    if len(out) < size:
+        out.extend([fill] * (size - len(out)))
+    return out[:size]
+
+
+def oblicz_fala_b(
+    dl: float,
+    sz: float,
+    wys: float,
+    gramatura: float,
+    cena_m2: float,
+    naklad1: int,
+    naklad2: int,
+    naklad3: int,
+    stale: List[float],
+    nasza: List[float],
+    kolory: List[float],
+    sloter_total: float,
+    rotacja_total: float,
+    druk_total: float,
+    inne_total: float,
+    klejenie_na_szt: float,
+    stawka_transport_km: float,
+    dystans_km: float,
+    podatek_multiplier: float = 0.38,
+    slot_klejenie_proc: float = 0.35,
+    transport_powrot: bool = True,
+) -> Dict:
     """
-    Zwraca słownik z wynikami obliczeń dla FALA B.
+    Przelicza wszystkie zależności z arkusza "FALA B".
     """
-    # Wiersz 8 – BIGI / BIGOWE
+
+    # --- BIGI I BIGOWE (wiersze 8–9) ---
     c8 = (sz / 2.0) + 2.0
     d8 = wys + 10.0
     e8 = (sz / 2.0) + 2.0
@@ -17,9 +58,8 @@ def oblicz_fala_b(dl, sz, wys, gramatura, cena_m2, naklad1, naklad2, naklad3, ma
     g8 = dl + 3.0
     h8 = sz + 3.0
     i8 = dl + 3.0
-    j8 = 35.0  # stała
+    j8 = 35.0
 
-    # Wiersz 9 – sumy narastająco
     c9 = c8
     d9 = c8 + d8
     e9 = c8 + d8 + e8
@@ -29,206 +69,456 @@ def oblicz_fala_b(dl, sz, wys, gramatura, cena_m2, naklad1, naklad2, naklad3, ma
     i9 = f8 + g8 + h8 + i8
     j9 = f8 + g8 + h8 + i8 + j8
 
-    # Wiersz 11 – formatka i wymiar zewnętrzny
-    # C11 = (((C5 + D5) * 2) + 35 + 12) - 2
+    # --- FORMATKA I WYMIAR ZEWNĘTRZNY ---
     formatka_c11 = (((dl + sz) * 2.0) + 35.0 + 12.0) - 2.0
-    # E11 = SUM(C8:E8)
     wymiar_zewnetrzny_e11 = c8 + d8 + e8
 
-    # G5 – zużycie m2/szt. (3 miejsca po przecinku jak w Excelu)
-    zuzycie_m2 = round((formatka_c11 * wymiar_zewnetrzny_e11) / 1_000_000.0, 3)
+    # --- ZUŻYCIE M2 ORAZ WAGA ---
+    zuzycie_m2 = _excel_fixed((formatka_c11 * wymiar_zewnetrzny_e11) / 1_000_000.0, 3)
+    waga_kg = (gramatura * zuzycie_m2) / 1000.0 if gramatura else 0.0
 
-    # J5 – waga opakowania kg/szt.
-    waga_kg = (gramatura * zuzycie_m2) / 1000.0
+    # --- PODSTAWOWE KOSZTY ---
+    koszt_mat_na_szt = zuzycie_m2 * cena_m2
+    koszt_sklejenia_na_szt = koszt_mat_na_szt * slot_klejenie_proc
 
-    # Koszt materiału / szt.
-    koszt_mat_szt = zuzycie_m2 * cena_m2
+    # --- MINIMUM PRODUKCYJNE I WERYFIKACJA ---
+    min_aq = 500.0 / formatka_c11 * 1000.0 if formatka_c11 else 0.0
+    min_con = 300.0 / zuzycie_m2 if zuzycie_m2 else 0.0
+    min_pg = 500.0 / zuzycie_m2 if zuzycie_m2 else 0.0
 
-    # Sloter + klejenie (przyjęty współczynnik 0.35 od kosztu materiału)
-    koszt_sklejenia = koszt_mat_szt * koszt_proc_sklejenie
+    weryfikacja_dl = i8 + 3.0
+    weryfikacja_sz = h8 + 3.0
+    weryfikacja_wys = d8 + 2.0
 
-    # Transport – prosty model: koszt = stawka * km; jeśli podano nakład,
-    # rozbijamy koszt na 1 szt. przez (nakład1 + nakład2 + nakład3) > 0
-    laczny_naklad = max(int(naklad1) + int(naklad2) + int(naklad3), 1)
-    koszt_transport_calk = (koszt_transport_km * dystans_km)
-    koszt_transport_szt = koszt_transport_calk / laczny_naklad
+    # --- NAKŁADY I LISTY WEJŚCIOWE ---
+    naklady = _ensure_len([int(naklad1), int(naklad2), int(naklad3)], 3, 0)
+    stale = _ensure_len(stale, 3, 0.0)
+    nasza = _ensure_len(nasza, 3, 0.0)
+    kolory = _ensure_len(kolory, 3, 0.0)
+    podatek = [nasza[i] * podatek_multiplier for i in range(3)]
 
-    # Suma techniczna (bez marży) / szt.
-    koszt_techniczny = koszt_mat_szt + koszt_sklejenia + koszt_transport_szt
+    # --- TRANSPORT ---
+    stawka_pelna = stawka_transport_km * (2.0 if transport_powrot else 1.0)
+    koszt_transport_calk = stawka_pelna * max(dystans_km, 0.0)
 
-    # Marża
-    cena_netto = koszt_techniczny * (1.0 + marza_proc / 100.0)
+    # --- SUMY DLA KAŻDEGO NAKŁADU ---
+    total_operations = [sloter_total, rotacja_total, druk_total, inne_total]
+    wyniki_nakladow = []
+    for idx, naklad in enumerate(naklady):
+        zuzycie_total = zuzycie_m2 * naklad
+        koszt_mat_total = koszt_mat_na_szt * naklad
+        transport_na_szt = _safe_division(koszt_transport_calk, naklad)
+        operacje_na_szt = sum(_safe_division(val, naklad) for val in total_operations)
+        marza_suma = (
+            stale[idx]
+            + nasza[idx]
+            + podatek[idx]
+            + kolory[idx]
+            + operacje_na_szt
+            + klejenie_na_szt
+            + transport_na_szt
+        )
+        koszt_mat_jednostkowy = _safe_division(koszt_mat_total, naklad)
+        cena_opakowania = marza_suma + koszt_mat_jednostkowy
+        wyniki_nakladow.append(
+            {
+                "naklad": naklad,
+                "zuzycie_m2_total": zuzycie_total,
+                "koszt_materialu_total": koszt_mat_total,
+                "koszt_materialu_na_szt": koszt_mat_jednostkowy,
+                "marza_suma_na_szt": marza_suma,
+                "transport_na_szt": transport_na_szt,
+                "cena_opakowania_na_szt": cena_opakowania,
+                "cena_opakowania_total": cena_opakowania * naklad,
+                "stala": stale[idx],
+                "nasza": nasza[idx],
+                "podatek": podatek[idx],
+                "kolor": kolory[idx],
+            }
+        )
 
-    # Minimum produkcyjne (z arkusza)
-    # A11 – =500 / C11 * 1000
-    min_prod_arkusz_1 = (500.0 / formatka_c11 * 1000.0) if formatka_c11 else 0.0
-    # A12 – =300 / G5
-    min_prod_arkusz_2 = (300.0 / zuzycie_m2) if zuzycie_m2 > 0 else 0.0
-
-    # KLUCZE ZWRACANE — NAZYWAMY JEDNOZNACZNIE
     return {
+        "bigi": {"c8": c8, "d8": d8, "e8": e8},
+        "bigowe": {"f8": f8, "g8": g8, "h8": h8, "i8": i8, "j8": j8},
+        "sumy_bigowe": {"c9": c9, "d9": d9, "e9": e9, "f9": f9, "g9": g9, "h9": h9, "i9": i9, "j9": j9},
         "formatka_mm": formatka_c11,
-        "wymiar_zewnetrzny_mm": wymiar_zewnetrzny_e11,  # <— TEN KLUCZ
+        "wymiar_zewnetrzny_mm": wymiar_zewnetrzny_e11,
         "zuzycie_m2_na_szt": zuzycie_m2,
         "waga_kg_na_szt": waga_kg,
-        "koszt_mat_na_szt": koszt_mat_szt,
-        "koszt_sklejenia_na_szt": koszt_sklejenia,
-        "koszt_transport_na_szt": koszt_transport_szt,
-        "cena_sugerowana_netto": cena_netto,
-        "min_prod_1": min_prod_arkusz_1,
-        "min_prod_2": min_prod_arkusz_2,
+        "koszt_mat_na_szt": koszt_mat_na_szt,
+        "koszt_sklejenia_na_szt": koszt_sklejenia_na_szt,
+        "slot_klejenie_proc": slot_klejenie_proc,
+        "minimum_produkcji": {"aq": min_aq, "con": min_con, "pg": min_pg},
+        "weryfikacja_zewnetrzna": {"dl": weryfikacja_dl, "sz": weryfikacja_sz, "wys": weryfikacja_wys},
+        "naklady": wyniki_nakladow,
+        "transport": {
+            "stawka_pelna": stawka_pelna,
+            "koszt_calkowity": koszt_transport_calk,
+            "dystans": dystans_km,
+            "powrot": transport_powrot,
+        },
+        "inne_parametry": {
+            "podatek_multiplier": podatek_multiplier,
+            "sloter_total": sloter_total,
+            "rotacja_total": rotacja_total,
+            "druk_total": druk_total,
+            "inne_total": inne_total,
+            "klejenie_na_szt": klejenie_na_szt,
+        },
     }
 
-# =============== TKINTER UI ===============
 
 class FalaBApp(ttk.Frame):
-    def __init__(self, master):
+    def __init__(self, master: tk.Tk):
         super().__init__(master, padding=12)
         self.master.title("Kalkulator – FALA B (handlowiec)")
         self.grid(sticky="nsew")
+        self._init_variables()
         self.create_widgets()
-        self.master.bind("<Return>", lambda e: self.policz())
+        self.master.bind("<Return>", lambda _event: self.policz())
 
-    def create_widgets(self):
-        # Konfiguracja siatki
-        for i in range(0, 8):
-            self.columnconfigure(i, weight=1)
-        for r in range(0, 20):
-            self.rowconfigure(r, weight=0)
-
-        # Sekcja wejścia
-        lbl = ttk.Label(self, text="Wymiary kartonu [mm]")
-        lbl.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0,6))
-
+    def _init_variables(self) -> None:
         self.var_dl = tk.StringVar(value="400")
         self.var_sz = tk.StringVar(value="300")
         self.var_wys = tk.StringVar(value="200")
         self.var_gram = tk.StringVar(value="675")
         self.var_cena_m2 = tk.StringVar(value="1.11")
-        self.var_n1 = tk.StringVar(value="0")
-        self.var_n2 = tk.StringVar(value="0")
-        self.var_n3 = tk.StringVar(value="0")
-        self.var_marza = tk.StringVar(value="20")
-        self.var_km_stawka = tk.StringVar(value="2.5")
-        self.var_km = tk.StringVar(value="0")
 
-        row = 1
-        ttk.Label(self, text="DŁ (C5)").grid(row=row, column=0, sticky="w"); ttk.Entry(self, textvariable=self.var_dl, width=10).grid(row=row, column=1, sticky="we")
-        ttk.Label(self, text="SZ (D5)").grid(row=row, column=2, sticky="w"); ttk.Entry(self, textvariable=self.var_sz, width=10).grid(row=row, column=3, sticky="we")
+        self.vars_naklad = [tk.StringVar(value=wartosc) for wartosc in ("2000", "1500", "500")]
 
-        row += 1
-        ttk.Label(self, text="WYS (E5)").grid(row=row, column=0, sticky="w"); ttk.Entry(self, textvariable=self.var_wys, width=10).grid(row=row, column=1, sticky="we")
-        ttk.Label(self, text="Gramatura g/m² (H5)").grid(row=row, column=2, sticky="w"); ttk.Entry(self, textvariable=self.var_gram, width=10).grid(row=row, column=3, sticky="we")
+        self.vars_stale = [tk.StringVar(value="0.02") for _ in range(3)]
+        self.vars_nasza = [tk.StringVar(value=wartosc) for wartosc in ("0.93", "0.25", "0.28")]
+        self.vars_kolor = [tk.StringVar(value="0.0") for _ in range(3)]
+        self.vars_podatek = [tk.StringVar(value="0.0") for _ in range(3)]
 
-        row += 1
-        ttk.Label(self, text="Cena surowca 1 m² (I5) [PLN]").grid(row=row, column=0, sticky="w"); ttk.Entry(self, textvariable=self.var_cena_m2, width=10).grid(row=row, column=1, sticky="we")
-        ttk.Label(self, text="Marża [%]").grid(row=row, column=2, sticky="w"); ttk.Entry(self, textvariable=self.var_marza, width=10).grid(row=row, column=3, sticky="we")
+        self.var_podatek_multiplier = tk.StringVar(value="0.38")
+        self.var_slot_klejenie_proc = tk.StringVar(value="0.35")
 
-        row += 1
-        ttk.Label(self, text="Nakład 1 (C15)").grid(row=row, column=0, sticky="w"); ttk.Entry(self, textvariable=self.var_n1, width=10).grid(row=row, column=1, sticky="we")
-        ttk.Label(self, text="Nakład 2 (D15)").grid(row=row, column=2, sticky="w"); ttk.Entry(self, textvariable=self.var_n2, width=10).grid(row=row, column=3, sticky="we")
+        self.var_sloter = tk.StringVar(value="40")
+        self.var_rotacja = tk.StringVar(value="0")
+        self.var_druk = tk.StringVar(value="0")
+        self.var_inne = tk.StringVar(value="0")
+        self.var_klejenie_szt = tk.StringVar(value="0.03")
 
-        row += 1
-        ttk.Label(self, text="Nakład 3 (E15)").grid(row=row, column=0, sticky="w"); ttk.Entry(self, textvariable=self.var_n3, width=10).grid(row=row, column=1, sticky="we")
-        ttk.Label(self, text="Transport [zł/km] • km").grid(row=row, column=2, sticky="w")
-        frm_tr = ttk.Frame(self)
-        frm_tr.grid(row=row, column=3, sticky="we")
-        ttk.Entry(frm_tr, textvariable=self.var_km_stawka, width=7).pack(side="left", padx=(0,6))
-        ttk.Entry(frm_tr, textvariable=self.var_km, width=7).pack(side="left")
+        self.var_transport_stawka = tk.StringVar(value="2.5")
+        self.var_transport_km = tk.StringVar(value="0")
+        self.var_transport_powrot = tk.BooleanVar(value=True)
 
-        # Przycisk
-        row += 1
-        ttk.Button(self, text="Policz", command=self.policz).grid(row=row, column=0, columnspan=4, sticky="we", pady=8)
+        self.var_machine = tk.StringVar(value="–")
+        self.var_minimum = tk.StringVar(value="–")
+        self.var_weryfikacja = tk.StringVar(value="–")
+        self.var_costs = tk.StringVar(value="–")
+        self.var_transport_info = tk.StringVar(value="–")
 
-        # Wyniki
-        sep = ttk.Separator(self); sep.grid(row=row+1, column=0, columnspan=4, sticky="we", pady=4)
+        self.table_params = (
+            "Nakład [szt.]",
+            "Zużycie m² (razem)",
+            "Koszt materiału (zł)",
+            "Koszt materiału / szt. (zł)",
+            "Transport / szt. (zł)",
+            "Marża suma / szt. (zł)",
+            "Cena opakowania / szt. (zł)",
+            "Cena partii (zł)",
+        )
+        self.table_vars: Dict[str, List[tk.StringVar]] = {
+            param: [tk.StringVar(value="–") for _ in range(3)]
+            for param in self.table_params
+        }
 
-        row += 2
-        self.txt_wymiary = ttk.Label(self, text="Wymiary zewnętrzne (E11): – mm   |  Formatka (C11): – mm")
-        self.txt_wymiary.grid(row=row, column=0, columnspan=4, sticky="w")
+    def create_widgets(self) -> None:
+        self.columnconfigure(0, weight=1, uniform="col")
+        self.columnconfigure(1, weight=1, uniform="col")
 
-        row += 1
-        self.txt_min = ttk.Label(self, text="Minimum produkcyjne: A11 –, A12 – [szt]")
-        self.txt_min.grid(row=row, column=0, columnspan=4, sticky="w")
+        frame_inputs = ttk.LabelFrame(self, text="Parametry kartonu i nakłady")
+        frame_inputs.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 8))
+        frame_inputs.columnconfigure(1, weight=1)
+        frame_inputs.columnconfigure(3, weight=1)
 
-        row += 1
-        self.txt_koszty = ttk.Label(self, text="Koszt materiału/szt.: – zł  |  SLOTER+KLEJENIE/szt.: – zł  |  Transport/szt.: – zł")
-        self.txt_koszty.grid(row=row, column=0, columnspan=4, sticky="w")
+        ttk.Label(frame_inputs, text="DŁ [mm] (C5)").grid(row=0, column=0, sticky="w")
+        ttk.Entry(frame_inputs, textvariable=self.var_dl, width=10).grid(row=0, column=1, sticky="we", padx=(0, 6))
+        ttk.Label(frame_inputs, text="SZ [mm] (D5)").grid(row=0, column=2, sticky="w")
+        ttk.Entry(frame_inputs, textvariable=self.var_sz, width=10).grid(row=0, column=3, sticky="we")
 
-        row += 1
-        self.txt_cena = ttk.Label(self, text="Cena sugerowana netto/szt.: – zł")
-        self.txt_cena.grid(row=row, column=0, columnspan=4, sticky="w")
+        ttk.Label(frame_inputs, text="WYS [mm] (E5)").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(frame_inputs, textvariable=self.var_wys, width=10).grid(row=1, column=1, sticky="we", padx=(0, 6), pady=(6, 0))
+        ttk.Label(frame_inputs, text="Gramatura [g/m²] (H5)").grid(row=1, column=2, sticky="w", pady=(6, 0))
+        ttk.Entry(frame_inputs, textvariable=self.var_gram, width=10).grid(row=1, column=3, sticky="we", pady=(6, 0))
 
-    def _parse_float(self, var, name):
+        ttk.Label(frame_inputs, text="Cena surowca 1 m² (I5) [zł]").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(frame_inputs, textvariable=self.var_cena_m2, width=10).grid(row=2, column=1, sticky="we", padx=(0, 6), pady=(6, 0))
+
+        ttk.Separator(frame_inputs).grid(row=3, column=0, columnspan=4, sticky="we", pady=8)
+        ttk.Label(frame_inputs, text="Nakłady [szt.]").grid(row=4, column=0, columnspan=4, sticky="w")
+        ttk.Label(frame_inputs, text="Nakład 1 (C15)").grid(row=5, column=0, sticky="w", pady=(4, 0))
+        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[0], width=10).grid(row=5, column=1, sticky="we", padx=(0, 6), pady=(4, 0))
+        ttk.Label(frame_inputs, text="Nakład 2 (D15)").grid(row=5, column=2, sticky="w", pady=(4, 0))
+        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[1], width=10).grid(row=5, column=3, sticky="we", pady=(4, 0))
+        ttk.Label(frame_inputs, text="Nakład 3 (E15)").grid(row=6, column=0, sticky="w")
+        ttk.Entry(frame_inputs, textvariable=self.vars_naklad[2], width=10).grid(row=6, column=1, sticky="we", padx=(0, 6))
+
+        frame_costs = ttk.LabelFrame(self, text="Składowe ceny za 1 szt.")
+        frame_costs.grid(row=0, column=1, sticky="nsew", pady=(0, 8))
+        frame_costs.columnconfigure(0, weight=1)
+        for col in range(1, 4):
+            frame_costs.columnconfigure(col, weight=1)
+
+        headers = ["Parametr", "Nakład 1", "Nakład 2", "Nakład 3"]
+        for col, text in enumerate(headers):
+            ttk.Label(frame_costs, text=text, font=("TkDefaultFont", 9, "bold")).grid(row=0, column=col, sticky="we", padx=2, pady=(0, 4))
+
+        rows = [
+            ("Stała (C20/D20/E20)", self.vars_stale),
+            ("Nasza (C21/D21/E21)", self.vars_nasza),
+            ("Kolor (C23/D23/E23)", self.vars_kolor),
+        ]
+        for r, (label, vars_row) in enumerate(rows, start=1):
+            ttk.Label(frame_costs, text=label).grid(row=r, column=0, sticky="w", padx=2, pady=2)
+            for idx, var in enumerate(vars_row):
+                ttk.Entry(frame_costs, textvariable=var, width=10).grid(row=r, column=idx + 1, sticky="we", padx=2, pady=2)
+
+        ttk.Label(frame_costs, text="Podatek = A24 × Nasza").grid(row=4, column=0, sticky="w", padx=2, pady=(8, 2))
+        for idx, var in enumerate(self.vars_podatek):
+            ttk.Label(frame_costs, textvariable=var, foreground="#555555").grid(row=4, column=idx + 1, sticky="we", padx=2, pady=(8, 2))
+
+        ttk.Label(frame_costs, text="Mnożnik podatku (A24)").grid(row=5, column=0, sticky="w", padx=2, pady=(6, 0))
+        ttk.Entry(frame_costs, textvariable=self.var_podatek_multiplier, width=10).grid(row=5, column=1, sticky="we", padx=2, pady=(6, 0))
+
+        ttk.Label(frame_costs, text="S+K [% od materiału] (A19)").grid(row=6, column=0, sticky="w", padx=2, pady=(6, 0))
+        ttk.Entry(frame_costs, textvariable=self.var_slot_klejenie_proc, width=10).grid(row=6, column=1, sticky="we", padx=2, pady=(6, 0))
+
+        frame_ops = ttk.LabelFrame(self, text="Operacje i transport")
+        frame_ops.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        for col in range(0, 6):
+            frame_ops.columnconfigure(col, weight=1)
+
+        ttk.Label(frame_ops, text="SLOTER (C25) [zł/partia]").grid(row=0, column=0, sticky="w")
+        ttk.Entry(frame_ops, textvariable=self.var_sloter, width=10).grid(row=0, column=1, sticky="we", padx=(0, 8))
+        ttk.Label(frame_ops, text="ROTACJA (D25)").grid(row=0, column=2, sticky="w")
+        ttk.Entry(frame_ops, textvariable=self.var_rotacja, width=10).grid(row=0, column=3, sticky="we", padx=(0, 8))
+        ttk.Label(frame_ops, text="Inne (E25/F25) [zł/partia]").grid(row=0, column=4, sticky="w")
+        ttk.Entry(frame_ops, textvariable=self.var_druk, width=10).grid(row=0, column=5, sticky="we")
+
+        ttk.Label(frame_ops, text="Dodatkowe koszty (F25)").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(frame_ops, textvariable=self.var_inne, width=10).grid(row=1, column=1, sticky="we", padx=(0, 8), pady=(6, 0))
+        ttk.Label(frame_ops, text="KLEJENIE / szt. (G25)").grid(row=1, column=2, sticky="w", pady=(6, 0))
+        ttk.Entry(frame_ops, textvariable=self.var_klejenie_szt, width=10).grid(row=1, column=3, sticky="we", padx=(0, 8), pady=(6, 0))
+
+        ttk.Separator(frame_ops).grid(row=2, column=0, columnspan=6, sticky="we", pady=8)
+        ttk.Label(frame_ops, text="Transport – stawka zł/km").grid(row=3, column=0, sticky="w")
+        ttk.Entry(frame_ops, textvariable=self.var_transport_stawka, width=10).grid(row=3, column=1, sticky="we", padx=(0, 8))
+        ttk.Label(frame_ops, text="Dystans [km] (C28)").grid(row=3, column=2, sticky="w")
+        ttk.Entry(frame_ops, textvariable=self.var_transport_km, width=10).grid(row=3, column=3, sticky="we", padx=(0, 8))
+        ttk.Checkbutton(frame_ops, text="Uwzględnij powrót", variable=self.var_transport_powrot).grid(row=3, column=4, columnspan=2, sticky="w")
+
+        ttk.Button(self, text="Policz", command=self.policz).grid(row=2, column=0, columnspan=2, sticky="we", pady=4)
+
+        frame_results = ttk.LabelFrame(self, text="Wyniki")
+        frame_results.grid(row=3, column=0, columnspan=2, sticky="nsew")
+        frame_results.columnconfigure(0, weight=1)
+
+        ttk.Label(frame_results, textvariable=self.var_machine, justify="left").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(frame_results, textvariable=self.var_minimum, justify="left").grid(row=1, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(frame_results, textvariable=self.var_weryfikacja, justify="left").grid(row=2, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(frame_results, textvariable=self.var_costs, justify="left").grid(row=3, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(frame_results, textvariable=self.var_transport_info, justify="left").grid(row=4, column=0, sticky="w", pady=(0, 8))
+
+        table_frame = ttk.Frame(frame_results)
+        table_frame.grid(row=5, column=0, sticky="nsew")
+        table_frame.columnconfigure(0, weight=2)
+        for col in range(1, 4):
+            table_frame.columnconfigure(col, weight=1)
+
+        for col, heading in enumerate(["Parametr", "Nakład 1", "Nakład 2", "Nakład 3"]):
+            ttk.Label(table_frame, text=heading, font=("TkDefaultFont", 9, "bold")).grid(row=0, column=col, sticky="we", padx=2, pady=(0, 4))
+
+        for r, param in enumerate(self.table_params, start=1):
+            ttk.Label(table_frame, text=param).grid(row=r, column=0, sticky="w", padx=2, pady=2)
+            for idx, var in enumerate(self.table_vars[param]):
+                ttk.Label(table_frame, textvariable=var).grid(row=r, column=idx + 1, sticky="we", padx=2, pady=2)
+
+    def _parse_float(self, var: tk.StringVar, name: str, default: float | None = None) -> float:
+        text = str(var.get()).strip().replace(",", ".")
+        if not text:
+            if default is not None:
+                return default
+            raise ValueError(f"Wymagana wartość w polu: {name}")
         try:
-            return float(str(var.get()).replace(",", "."))
-        except Exception:
-            raise ValueError(f"Nieprawidłowa wartość w polu: {name}")
+            return float(text)
+        except ValueError as exc:
+            raise ValueError(f"Nieprawidłowa wartość w polu: {name}") from exc
 
-    def _parse_int(self, var, name):
+    def _parse_float_optional(self, var: tk.StringVar, name: str) -> float:
+        return self._parse_float(var, name, default=0.0)
+
+    def _parse_int(self, var: tk.StringVar, name: str) -> int:
+        text = str(var.get()).strip()
+        if not text:
+            return 0
         try:
-            return int(float(str(var.get()).replace(",", ".")))
-        except Exception:
-            raise ValueError(f"Nieprawidłowa wartość w polu: {name}")
+            return int(float(text.replace(",", ".")))
+        except ValueError as exc:
+            raise ValueError(f"Nieprawidłowa wartość w polu: {name}") from exc
 
-    def policz(self):
+    def _format_number(self, value: float, decimals: int = 2, placeholder: str = "–") -> str:
+        if value is None:
+            return placeholder
+        try:
+            return f"{value:.{decimals}f}"
+        except (TypeError, ValueError):
+            return placeholder
+
+    def policz(self) -> None:
         try:
             dl = self._parse_float(self.var_dl, "DŁ")
             sz = self._parse_float(self.var_sz, "SZ")
             wys = self._parse_float(self.var_wys, "WYS")
             gram = self._parse_float(self.var_gram, "Gramatura")
-            cena_m2 = self._parse_float(self.var_cena_m2, "Cena m2")
-            n1 = self._parse_int(self.var_n1, "Nakład 1")
-            n2 = self._parse_int(self.var_n2, "Nakład 2")
-            n3 = self._parse_int(self.var_n3, "Nakład 3")
-            marza = self._parse_float(self.var_marza, "Marża")
-            km_st = self._parse_float(self.var_km_stawka, "Stawka km")
-            km = self._parse_float(self.var_km, "km")
-        except ValueError as e:
-            messagebox.showerror("Błąd danych", str(e))
+            cena_m2 = self._parse_float(self.var_cena_m2, "Cena 1 m²")
+
+            naklady = [self._parse_int(var, f"Nakład {idx + 1}") for idx, var in enumerate(self.vars_naklad)]
+
+            stale = [self._parse_float_optional(var, f"Stała {idx + 1}") for idx, var in enumerate(self.vars_stale)]
+            nasza = [self._parse_float_optional(var, f"Nasza {idx + 1}") for idx, var in enumerate(self.vars_nasza)]
+            kolory = [self._parse_float_optional(var, f"Kolor {idx + 1}") for idx, var in enumerate(self.vars_kolor)]
+
+            podatek_multiplier = self._parse_float_optional(self.var_podatek_multiplier, "Mnożnik podatku")
+            slot_proc = self._parse_float_optional(self.var_slot_klejenie_proc, "S+K [%]")
+
+            sloter = self._parse_float_optional(self.var_sloter, "SLOTER")
+            rotacja = self._parse_float_optional(self.var_rotacja, "ROTACJA")
+            druk = self._parse_float_optional(self.var_druk, "Dodatkowe koszty (E25)")
+            inne = self._parse_float_optional(self.var_inne, "Dodatkowe koszty (F25)")
+            klejenie_szt = self._parse_float_optional(self.var_klejenie_szt, "KLEJENIE / szt.")
+
+            stawka_km = self._parse_float_optional(self.var_transport_stawka, "Stawka transport")
+            dystans = self._parse_float_optional(self.var_transport_km, "Dystans km")
+            powrot = bool(self.var_transport_powrot.get())
+        except ValueError as exc:
+            messagebox.showerror("Błąd danych", str(exc))
             return
 
-        wyn = oblicz_fala_b(
-            dl=dl, sz=sz, wys=wys,
-            gramatura=gram, cena_m2=cena_m2,
-            naklad1=n1, naklad2=n2, naklad3=n3,
-            marza_proc=marza,
-            koszt_transport_km=km_st, dystans_km=km
+        wyniki = oblicz_fala_b(
+            dl=dl,
+            sz=sz,
+            wys=wys,
+            gramatura=gram,
+            cena_m2=cena_m2,
+            naklad1=naklady[0],
+            naklad2=naklady[1],
+            naklad3=naklady[2],
+            stale=stale,
+            nasza=nasza,
+            kolory=kolory,
+            sloter_total=sloter,
+            rotacja_total=rotacja,
+            druk_total=druk,
+            inne_total=inne,
+            klejenie_na_szt=klejenie_szt,
+            stawka_transport_km=stawka_km,
+            dystans_km=dystans,
+            podatek_multiplier=podatek_multiplier,
+            slot_klejenie_proc=slot_proc,
+            transport_powrot=powrot,
         )
 
-        # Pobranie wartości z bezpiecznym .get (na wypadek starych wersji pliku)
-        wym_zew = wyn.get("wymiar_zewnetrzny_mm", wyn.get("wymiar_zewnetrzny_e11", 0.0))
-        formatka = wyn.get("formatka_mm", 0.0)
-        min1 = wyn.get("min_prod_1", 0.0)
-        min2 = wyn.get("min_prod_2", 0.0)
-        koszt_mat = wyn.get("koszt_mat_na_szt", 0.0)
-        koszt_skl = wyn.get("koszt_sklejenia_na_szt", 0.0)
-        koszt_tr = wyn.get("koszt_transport_na_szt", 0.0)
-        cena_netto = wyn.get("cena_sugerowana_netto", 0.0)
+        bigi = wyniki["bigi"]
+        bigowe = wyniki["bigowe"]
+        sumy = wyniki["sumy_bigowe"]
+        self.var_machine.set(
+            "\n".join(
+                [
+                    f"Formatka (C11): {wyniki['formatka_mm']:.2f} mm",
+                    f"Wymiar zewnętrzny (E11): {wyniki['wymiar_zewnetrzny_mm']:.2f} mm",
+                    (
+                        "Bigi [C8/D8/E8]: "
+                        f"{bigi['c8']:.2f} | {bigi['d8']:.2f} | {bigi['e8']:.2f} mm"
+                    ),
+                    (
+                        "Bigowe [F8/G8/H8/I8/J8]: "
+                        f"{bigowe['f8']:.2f} | {bigowe['g8']:.2f} | {bigowe['h8']:.2f} | "
+                        f"{bigowe['i8']:.2f} | {bigowe['j8']:.2f} mm"
+                    ),
+                    (
+                        "Sumy [C9–J9]: "
+                        f"{sumy['c9']:.2f} | {sumy['d9']:.2f} | {sumy['e9']:.2f} | "
+                        f"{sumy['f9']:.2f} | {sumy['g9']:.2f} | {sumy['h9']:.2f} | "
+                        f"{sumy['i9']:.2f} | {sumy['j9']:.2f} mm"
+                    ),
+                ]
+            )
+        )
 
-        # Aktualizacja etykiet
-        self.txt_wymiary.configure(text=f"Wymiary zewnętrzne (E11): {wym_zew:.2f} mm   |  Formatka (C11): {formatka:.2f} mm")
-        self.txt_min.configure(text=f"Minimum produkcyjne: A11 {min1:.0f} szt,  A12 {min2:.0f} szt")
-        self.txt_koszty.configure(text=(
-            f"Koszt materiału/szt.: {koszt_mat:.4f} zł  |  "
-            f"SLOTER+KLEJENIE/szt.: {koszt_skl:.4f} zł  |  "
-            f"Transport/szt.: {koszt_tr:.4f} zł"
-        ))
-        self.txt_cena.configure(text=f"Cena sugerowana netto/szt.: {cena_netto:.4f} zł")
+        minimum = wyniki["minimum_produkcji"]
+        self.var_minimum.set(
+            "Minimum produkcyjne: "
+            f"AQ (A11) {minimum['aq']:.0f} szt | "
+            f"CON (A12) {minimum['con']:.0f} szt | "
+            f"PG (A13) {minimum['pg']:.0f} szt"
+        )
 
-def main():
+        weryf = wyniki["weryfikacja_zewnetrzna"]
+        self.var_weryfikacja.set(
+            "Weryfikacja wymiarów (H12/I12/J12): "
+            f"dł {weryf['dl']:.2f} mm | sz {weryf['sz']:.2f} mm | wys {weryf['wys']:.2f} mm"
+        )
+
+        self.var_costs.set(
+            "\n".join(
+                [
+                    f"Zużycie m²/szt. (G5): {wyniki['zuzycie_m2_na_szt']:.3f}",
+                    f"Waga kg/szt. (J5): {wyniki['waga_kg_na_szt']:.3f}",
+                    (
+                        "Koszt materiału/szt. (A18): "
+                        f"{wyniki['koszt_mat_na_szt']:.4f} zł"
+                    ),
+                    (
+                        "S+K {wyniki['slot_klejenie_proc']*100:.1f}% → "
+                        f"{wyniki['koszt_sklejenia_na_szt']:.4f} zł/szt."
+                    ),
+                ]
+            )
+        )
+
+        transport = wyniki["transport"]
+        powrot_txt = "tak" if transport["powrot"] else "nie"
+        self.var_transport_info.set(
+            f"Transport: stawka {transport['stawka_pelna']:.2f} zł/km, "
+            f"dystans {transport['dystans']:.2f} km, powrót: {powrot_txt}. "
+            f"Koszt łączny: {transport['koszt_calkowity']:.2f} zł"
+        )
+
+        for idx, dane in enumerate(wyniki["naklady"]):
+            self.vars_podatek[idx].set(self._format_number(dane["podatek"], 6))
+
+        for param in self.table_params:
+            for var in self.table_vars[param]:
+                var.set("–")
+
+        for idx, dane in enumerate(wyniki["naklady"]):
+            self.table_vars["Nakład [szt.]"][idx].set(f"{int(dane['naklad'])}")
+            self.table_vars["Zużycie m² (razem)"][idx].set(self._format_number(dane["zuzycie_m2_total"], 3))
+            self.table_vars["Koszt materiału (zł)"][idx].set(self._format_number(dane["koszt_materialu_total"], 2))
+            self.table_vars["Koszt materiału / szt. (zł)"][idx].set(self._format_number(dane["koszt_materialu_na_szt"], 4))
+            self.table_vars["Transport / szt. (zł)"][idx].set(self._format_number(dane["transport_na_szt"], 4))
+            self.table_vars["Marża suma / szt. (zł)"][idx].set(self._format_number(dane["marza_suma_na_szt"], 4))
+            self.table_vars["Cena opakowania / szt. (zł)"][idx].set(self._format_number(dane["cena_opakowania_na_szt"], 4))
+            self.table_vars["Cena partii (zł)"][idx].set(self._format_number(dane["cena_opakowania_total"], 2))
+
+
+def main() -> None:
     root = tk.Tk()
-    # Styl
     try:
         from ctypes import windll
-        windll.shcore.SetProcessDpiAwareness(1)  # lepsze skalowanie na Windows
+
+        windll.shcore.SetProcessDpiAwareness(1)
     except Exception:
         pass
-    root.geometry("700x330")
+    root.geometry("980x640")
     root.rowconfigure(0, weight=1)
     root.columnconfigure(0, weight=1)
     app = FalaBApp(root)
     root.mainloop()
+
 
 if __name__ == "__main__":
     main()
