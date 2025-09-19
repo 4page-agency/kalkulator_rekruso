@@ -1,11 +1,18 @@
+import base64
+import binascii
+import json
+import hashlib
+import hmac
 import os
 import subprocess
 import sys
 import tempfile
 import threading
 import tkinter as tk
+from copy import deepcopy
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any, Dict
 
@@ -16,6 +23,161 @@ def _excel_fixed(value: float, digits: int) -> float:
         raise ValueError("Liczba miejsc po przecinku nie może być ujemna.")
     quant = Decimal("1").scaleb(-digits)
     return float(Decimal(str(value)).quantize(quant, rounding=ROUND_HALF_UP))
+
+
+CONFIG_DIR_NAME = "kalkulator_retruso"
+CONFIG_FILE_NAME = "config.json"
+DEFAULT_MARGIN_RULES = [
+    {"max_quantity": 300, "margin_percent": 100.0},
+    {"max_quantity": 500, "margin_percent": 70.0},
+    {"max_quantity": 1000, "margin_percent": 25.0},
+]
+PBKDF2_ITERATIONS = 120_000
+
+
+def _get_config_dir() -> Path:
+    local_app_data = os.getenv("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / CONFIG_DIR_NAME
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / CONFIG_DIR_NAME
+    return Path.home() / ".config" / CONFIG_DIR_NAME
+
+
+class ConfigManager:
+    def __init__(self) -> None:
+        self.config_dir = _get_config_dir()
+        self.config_file = self.config_dir / CONFIG_FILE_NAME
+        self.data: Dict[str, Any] = {
+            "password": None,
+            "margin_rules": deepcopy(DEFAULT_MARGIN_RULES),
+        }
+        self.load()
+
+    def load(self) -> None:
+        try:
+            with self.config_file.open("r", encoding="utf-8") as file:
+                raw_data = json.load(file)
+        except FileNotFoundError:
+            return
+        except (json.JSONDecodeError, OSError):
+            return
+
+        password_info = raw_data.get("password")
+        if isinstance(password_info, dict):
+            salt = password_info.get("salt")
+            hash_value = password_info.get("hash")
+            iterations = password_info.get("iterations", PBKDF2_ITERATIONS)
+            if salt and hash_value:
+                try:
+                    iterations_int = int(iterations)
+                except (TypeError, ValueError):
+                    iterations_int = PBKDF2_ITERATIONS
+                self.data["password"] = {
+                    "salt": str(salt),
+                    "hash": str(hash_value),
+                    "iterations": iterations_int,
+                }
+
+        margin_rules = self._sanitize_margin_rules(raw_data.get("margin_rules"))
+        if margin_rules is not None:
+            self.data["margin_rules"] = margin_rules
+
+    def save(self) -> None:
+        try:
+            self.config_dir.mkdir(parents=True, exist_ok=True)
+            with self.config_file.open("w", encoding="utf-8") as file:
+                json.dump(
+                    {
+                        "password": self.data.get("password"),
+                        "margin_rules": self.data.get("margin_rules", []),
+                    },
+                    file,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+        except OSError:
+            pass
+
+    def has_password(self) -> bool:
+        password_info = self.data.get("password")
+        return bool(
+            isinstance(password_info, dict)
+            and password_info.get("salt")
+            and password_info.get("hash")
+        )
+
+    def set_password(self, password: str) -> None:
+        salt_b64, hash_b64 = self._hash_password(password)
+        self.data["password"] = {
+            "salt": salt_b64,
+            "hash": hash_b64,
+            "iterations": PBKDF2_ITERATIONS,
+        }
+        self.save()
+
+    def verify_password(self, password: str) -> bool:
+        password_info = self.data.get("password")
+        if not isinstance(password_info, dict):
+            return False
+        salt_b64 = password_info.get("salt")
+        hash_b64 = password_info.get("hash")
+        iterations = password_info.get("iterations", PBKDF2_ITERATIONS)
+        if not salt_b64 or not hash_b64:
+            return False
+        try:
+            salt = base64.b64decode(str(salt_b64))
+            stored_hash = base64.b64decode(str(hash_b64))
+            iterations_int = int(iterations)
+        except (binascii.Error, TypeError, ValueError):
+            return False
+        new_hash = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, iterations_int
+        )
+        return hmac.compare_digest(new_hash, stored_hash)
+
+    def get_margin_rules(self) -> list[dict[str, float]]:
+        return deepcopy(self.data.get("margin_rules", []))
+
+    def update_margin_rules(
+        self, rules: list[dict[str, float]]
+    ) -> list[dict[str, float]]:
+        sanitized = self._sanitize_margin_rules(rules)
+        if sanitized is None:
+            sanitized = deepcopy(DEFAULT_MARGIN_RULES)
+        self.data["margin_rules"] = sanitized
+        self.save()
+        return deepcopy(self.data["margin_rules"])
+
+    def _hash_password(self, password: str) -> tuple[str, str]:
+        salt = os.urandom(16)
+        password_hash = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS
+        )
+        return (
+            base64.b64encode(salt).decode("ascii"),
+            base64.b64encode(password_hash).decode("ascii"),
+        )
+
+    def _sanitize_margin_rules(
+        self, value: Any
+    ) -> list[dict[str, float]] | None:
+        if not isinstance(value, list):
+            return None
+        sanitized: list[dict[str, float]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            try:
+                max_quantity = int(item.get("max_quantity"))
+                margin_percent = float(item.get("margin_percent"))
+            except (TypeError, ValueError):
+                continue
+            sanitized.append(
+                {"max_quantity": max_quantity, "margin_percent": margin_percent}
+            )
+        sanitized.sort(key=lambda rule: rule["max_quantity"])
+        return sanitized
 
 def oblicz_fala_b(
     dl: float,
@@ -105,6 +267,9 @@ class FalaBApp(ttk.Frame):
         super().__init__(master, padding=12)
         self.master.title("Kalkulator Rekruso")
         self.grid(sticky="nsew")
+        self.config = ConfigManager()
+        self.margin_rules: list[dict[str, float]] = self.config.get_margin_rules()
+        self.settings_unlocked = False
         self._init_variables()
         self.last_results: Dict[str, Any] = {}
         self.create_widgets()
@@ -154,10 +319,29 @@ class FalaBApp(ttk.Frame):
         )
 
     def create_widgets(self) -> None:
-        self.columnconfigure(0, weight=1, uniform="col")
-        self.columnconfigure(1, weight=1, uniform="col")
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        frame_client = ttk.LabelFrame(self, text="Dane klienta")
+        self.notebook = ttk.Notebook(self)
+        self.notebook.grid(row=0, column=0, sticky="nsew")
+
+        self.tab_calculator = ttk.Frame(self.notebook)
+        self.tab_settings = ttk.Frame(self.notebook)
+
+        self.notebook.add(self.tab_calculator, text="Kalkulator")
+        self.notebook.add(self.tab_settings, text="Ustawienia")
+
+        self._build_calculator_tab()
+        self._build_settings_tab()
+
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
+    def _build_calculator_tab(self) -> None:
+        tab = self.tab_calculator
+        tab.columnconfigure(0, weight=1, uniform="col")
+        tab.columnconfigure(1, weight=1, uniform="col")
+
+        frame_client = ttk.LabelFrame(tab, text="Dane klienta")
         frame_client.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
         for col in (1, 3):
             frame_client.columnconfigure(col, weight=1)
@@ -179,7 +363,7 @@ class FalaBApp(ttk.Frame):
             row=1, column=3, sticky="we", pady=(6, 0)
         )
 
-        frame_inputs = ttk.LabelFrame(self, text="Parametry kartonu i nakłady")
+        frame_inputs = ttk.LabelFrame(tab, text="Parametry kartonu i nakłady")
         frame_inputs.grid(row=1, column=0, sticky="nsew", padx=(0, 10), pady=(0, 8))
         for col in (1, 3, 5):
             frame_inputs.columnconfigure(col, weight=1)
@@ -250,7 +434,7 @@ class FalaBApp(ttk.Frame):
                 row=row, column=1, sticky="w", padx=(4, 0)
             )
 
-        frame_right = ttk.Frame(self)
+        frame_right = ttk.Frame(tab)
         frame_right.grid(row=1, column=1, sticky="nsew", pady=(0, 8))
         frame_right.columnconfigure(0, weight=1)
         frame_right.rowconfigure(0, weight=1)
@@ -295,7 +479,7 @@ class FalaBApp(ttk.Frame):
             row=0, column=0, sticky="w"
         )
 
-        frame_costs = ttk.LabelFrame(self, text="Koszty dodatkowe i transport")
+        frame_costs = ttk.LabelFrame(tab, text="Koszty dodatkowe i transport")
         frame_costs.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
         for col in (1, 3):
             frame_costs.columnconfigure(col, weight=1)
@@ -322,7 +506,7 @@ class FalaBApp(ttk.Frame):
             variable=self.var_transport_powrot,
         ).grid(row=1, column=2, columnspan=2, sticky="w", pady=(6, 0))
 
-        frame_actions = ttk.Frame(self)
+        frame_actions = ttk.Frame(tab)
         frame_actions.grid(row=3, column=0, columnspan=2, sticky="we", pady=(0, 8))
         frame_actions.columnconfigure(0, weight=1)
         frame_actions.columnconfigure(1, weight=1)
@@ -336,7 +520,7 @@ class FalaBApp(ttk.Frame):
             command=self.print_summary,
         ).grid(row=0, column=1, sticky="we", padx=(4, 0))
 
-        frame_results = ttk.LabelFrame(self, text="Wyniki")
+        frame_results = ttk.LabelFrame(tab, text="Wyniki")
         frame_results.grid(row=4, column=0, columnspan=2, sticky="nsew")
         frame_results.columnconfigure(0, weight=1)
 
@@ -346,6 +530,357 @@ class FalaBApp(ttk.Frame):
         ttk.Label(frame_results, textvariable=self.var_transport_info, justify="left").grid(
             row=1, column=0, sticky="w", pady=(0, 8)
         )
+
+        tab.rowconfigure(4, weight=1)
+
+    def _build_settings_tab(self) -> None:
+        tab = self.tab_settings
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(0, weight=1)
+
+        self.settings_locked_frame = ttk.Frame(tab, padding=20)
+        self.settings_locked_frame.grid(row=0, column=0, sticky="nsew")
+        self.settings_locked_frame.columnconfigure(1, weight=1)
+
+        self.settings_content_frame = ttk.Frame(tab, padding=20)
+        self.settings_content_frame.grid(row=0, column=0, sticky="nsew")
+        self.settings_content_frame.columnconfigure(0, weight=1)
+        self.settings_content_frame.columnconfigure(1, weight=1)
+        self.settings_content_frame.columnconfigure(2, weight=1)
+        self.settings_content_frame.columnconfigure(3, weight=1)
+
+        self.var_settings_password = tk.StringVar()
+        self.var_settings_password_confirm = tk.StringVar()
+        self.settings_message_var = tk.StringVar()
+
+        self.settings_locked_title = ttk.Label(
+            self.settings_locked_frame, text=""
+        )
+        self.settings_locked_title.grid(row=0, column=0, columnspan=2, sticky="w")
+
+        ttk.Label(self.settings_locked_frame, text="Hasło").grid(
+            row=1, column=0, sticky="w", pady=(12, 0)
+        )
+        self.entry_settings_password = ttk.Entry(
+            self.settings_locked_frame,
+            textvariable=self.var_settings_password,
+            show="*",
+        )
+        self.entry_settings_password.grid(row=1, column=1, sticky="we", pady=(12, 0))
+
+        self.settings_locked_confirm_label = ttk.Label(
+            self.settings_locked_frame, text="Powtórz hasło"
+        )
+        self.settings_locked_confirm_entry = ttk.Entry(
+            self.settings_locked_frame,
+            textvariable=self.var_settings_password_confirm,
+            show="*",
+        )
+
+        self.settings_message_label = ttk.Label(
+            self.settings_locked_frame, textvariable=self.settings_message_var
+        )
+        self.settings_message_label.grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(12, 0)
+        )
+
+        self.settings_action_button = ttk.Button(
+            self.settings_locked_frame, command=self._handle_locked_action
+        )
+        self.settings_action_button.grid(
+            row=4, column=0, columnspan=2, sticky="we", pady=(12, 0)
+        )
+
+        ttk.Label(
+            self.settings_content_frame,
+            text="Konfiguracja marży",
+            font=("TkDefaultFont", 11, "bold"),
+        ).grid(row=0, column=0, columnspan=4, sticky="w")
+
+        self.margin_tree = ttk.Treeview(
+            self.settings_content_frame,
+            columns=("quantity", "margin"),
+            show="headings",
+            selectmode="browse",
+            height=10,
+        )
+        self.margin_tree.heading("quantity", text="Do ilości [szt.]")
+        self.margin_tree.heading("margin", text="Marża [%]")
+        self.margin_tree.column("quantity", anchor="center", width=160)
+        self.margin_tree.column("margin", anchor="center", width=120)
+        self.margin_tree.grid(row=1, column=0, columnspan=3, sticky="nsew", pady=(12, 8))
+
+        margin_scroll = ttk.Scrollbar(
+            self.settings_content_frame,
+            orient="vertical",
+            command=self.margin_tree.yview,
+        )
+        margin_scroll.grid(row=1, column=3, sticky="nsw", pady=(12, 8))
+        self.margin_tree.configure(yscrollcommand=margin_scroll.set)
+        self.margin_tree.bind("<<TreeviewSelect>>", self._on_margin_tree_select)
+
+        input_frame = ttk.Frame(self.settings_content_frame)
+        input_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(4, 0))
+        input_frame.columnconfigure(1, weight=1)
+        input_frame.columnconfigure(3, weight=1)
+
+        ttk.Label(input_frame, text="Maks. ilość [szt.]").grid(
+            row=0, column=0, sticky="w"
+        )
+        self.var_margin_quantity = tk.StringVar()
+        ttk.Entry(input_frame, textvariable=self.var_margin_quantity).grid(
+            row=0, column=1, sticky="ew", padx=(4, 12)
+        )
+
+        ttk.Label(input_frame, text="Marża [%]").grid(row=0, column=2, sticky="w")
+        self.var_margin_value = tk.StringVar()
+        ttk.Entry(input_frame, textvariable=self.var_margin_value).grid(
+            row=0, column=3, sticky="ew", padx=(4, 0)
+        )
+
+        button_frame = ttk.Frame(self.settings_content_frame)
+        button_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        button_frame.columnconfigure(0, weight=1)
+        button_frame.columnconfigure(1, weight=1)
+        button_frame.columnconfigure(2, weight=1)
+
+        ttk.Button(
+            button_frame,
+            text="Dodaj / zaktualizuj",
+            command=self._add_or_update_margin_rule,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(
+            button_frame,
+            text="Usuń zaznaczoną",
+            command=self._remove_margin_rule,
+        ).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(
+            button_frame,
+            text="Przywróć domyślne",
+            command=self._reset_margin_rules,
+        ).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+
+        self.margin_message_var = tk.StringVar()
+        self.margin_message_label = ttk.Label(
+            self.settings_content_frame, textvariable=self.margin_message_var
+        )
+        self.margin_message_label.grid(
+            row=4, column=0, columnspan=4, sticky="w", pady=(10, 0)
+        )
+
+        self.settings_content_frame.grid_remove()
+        self._show_settings_locked()
+
+    def _on_tab_changed(self, event: tk.Event) -> None:
+        widget = event.widget
+        if not isinstance(widget, ttk.Notebook):
+            return
+        current = widget.select()
+        if current == str(self.tab_settings):
+            if self.settings_unlocked:
+                self._show_settings_content()
+            else:
+                self._show_settings_locked()
+
+    def _show_settings_locked(self) -> None:
+        self.settings_unlocked = False
+        self.settings_content_frame.grid_remove()
+        self.settings_locked_frame.grid()
+        self.var_settings_password.set("")
+        self.var_settings_password_confirm.set("")
+        self._set_settings_message("")
+        self._set_margin_message("")
+        self._refresh_locked_frame_mode()
+
+    def _show_settings_content(self) -> None:
+        self.settings_locked_frame.grid_remove()
+        self.settings_content_frame.grid()
+        self.settings_unlocked = True
+        self._set_settings_message("")
+        self._set_margin_message("")
+        self.margin_rules = self.config.get_margin_rules()
+        self._refresh_margin_tree()
+
+    def _refresh_locked_frame_mode(self) -> None:
+        if self.config.has_password():
+            self.settings_locked_title.config(
+                text="Podaj hasło, aby otworzyć ustawienia."
+            )
+            self.settings_locked_confirm_label.grid_remove()
+            self.settings_locked_confirm_entry.grid_remove()
+            self.settings_action_button.config(text="Zaloguj")
+        else:
+            self.settings_locked_title.config(
+                text="Utwórz hasło, aby zabezpieczyć ustawienia."
+            )
+            self.settings_locked_confirm_label.grid(
+                row=2, column=0, sticky="w", pady=(6, 0)
+            )
+            self.settings_locked_confirm_entry.grid(
+                row=2, column=1, sticky="we", pady=(6, 0)
+            )
+            self.settings_action_button.config(text="Zapisz hasło")
+        self.entry_settings_password.focus_set()
+
+    def _handle_locked_action(self) -> None:
+        password = self.var_settings_password.get().strip()
+        if not password:
+            self._set_settings_message("Hasło nie może być puste.", error=True)
+            return
+
+        if self.config.has_password():
+            if not self.config.verify_password(password):
+                self._set_settings_message("Nieprawidłowe hasło.", error=True)
+                self.var_settings_password.set("")
+                return
+            self._set_settings_message("")
+            self.var_settings_password.set("")
+            self._show_settings_content()
+            return
+
+        confirm = self.var_settings_password_confirm.get().strip()
+        if password != confirm:
+            self._set_settings_message("Hasła muszą być identyczne.", error=True)
+            return
+        self.config.set_password(password)
+        self.var_settings_password.set("")
+        self.var_settings_password_confirm.set("")
+        self._set_settings_message("")
+        messagebox.showinfo(
+            "Hasło zapisane",
+            "Hasło zostało utworzone. Zapisz je w bezpiecznym miejscu.",
+        )
+        self._show_settings_content()
+
+    def _set_settings_message(self, text: str, error: bool = False) -> None:
+        self.settings_message_var.set(text)
+        self.settings_message_label.configure(foreground="red" if error else "")
+
+    def _refresh_margin_tree(self) -> None:
+        for item in self.margin_tree.get_children():
+            self.margin_tree.delete(item)
+        for index, rule in enumerate(self.margin_rules):
+            qty = rule.get("max_quantity")
+            margin = rule.get("margin_percent")
+            qty_display = "-"
+            try:
+                if qty is not None:
+                    qty_float = float(qty)
+                    qty_display = (
+                        f"{int(qty_float)}"
+                        if float(qty_float).is_integer()
+                        else f"{qty_float:.2f}"
+                    )
+            except (TypeError, ValueError):
+                qty_display = "-"
+            try:
+                margin_float = float(margin) if margin is not None else None
+            except (TypeError, ValueError):
+                margin_float = None
+            margin_display = "-" if margin_float is None else f"{margin_float:.2f}"
+            self.margin_tree.insert(
+                "",
+                "end",
+                iid=str(index),
+                values=(qty_display, margin_display),
+            )
+        for item in self.margin_tree.selection():
+            self.margin_tree.selection_remove(item)
+
+    def _on_margin_tree_select(self, _event: tk.Event) -> None:
+        selection = self.margin_tree.selection()
+        if not selection:
+            return
+        item_id = selection[0]
+        values = self.margin_tree.item(item_id, "values")
+        if len(values) >= 2:
+            self.var_margin_quantity.set(str(values[0]))
+            self.var_margin_value.set(str(values[1]))
+
+    def _add_or_update_margin_rule(self) -> None:
+        qty_text = self.var_margin_quantity.get().strip().replace(",", ".")
+        margin_text = self.var_margin_value.get().strip().replace(",", ".")
+        if not qty_text or not margin_text:
+            self._set_margin_message("Podaj wartości ilości i marży.", error=True)
+            return
+
+        try:
+            qty_value = int(float(qty_text))
+        except ValueError:
+            self._set_margin_message("Nieprawidłowa liczba sztuk.", error=True)
+            return
+        if qty_value <= 0:
+            self._set_margin_message(
+                "Maksymalna ilość musi być większa od zera.", error=True
+            )
+            return
+
+        try:
+            margin_value = float(margin_text)
+        except ValueError:
+            self._set_margin_message("Nieprawidłowa wartość marży.", error=True)
+            return
+        if margin_value < 0:
+            self._set_margin_message("Marża nie może być ujemna.", error=True)
+            return
+
+        existing = next(
+            (rule for rule in self.margin_rules if rule["max_quantity"] == qty_value),
+            None,
+        )
+        if existing is not None:
+            existing["margin_percent"] = margin_value
+        else:
+            self.margin_rules.append(
+                {"max_quantity": qty_value, "margin_percent": margin_value}
+            )
+        self.margin_rules.sort(key=lambda rule: rule["max_quantity"])
+        self._persist_margin_rules()
+        self._set_margin_message("Zapisano konfigurację marży.")
+        self._clear_margin_form()
+
+    def _remove_margin_rule(self) -> None:
+        selection = self.margin_tree.selection()
+        if not selection:
+            self._set_margin_message("Zaznacz pozycję do usunięcia.", error=True)
+            return
+        item_id = selection[0]
+        try:
+            index = int(item_id)
+        except ValueError:
+            self._set_margin_message("Nie udało się usunąć pozycji.", error=True)
+            return
+        if not 0 <= index < len(self.margin_rules):
+            self._set_margin_message("Nie udało się usunąć pozycji.", error=True)
+            return
+        del self.margin_rules[index]
+        self._persist_margin_rules()
+        self._set_margin_message("Usunięto pozycję marży.")
+        self._clear_margin_form()
+
+    def _reset_margin_rules(self) -> None:
+        if not messagebox.askyesno(
+            "Przywracanie", "Czy na pewno chcesz przywrócić domyślne wartości marży?"
+        ):
+            return
+        self.margin_rules = deepcopy(DEFAULT_MARGIN_RULES)
+        self._persist_margin_rules()
+        self._set_margin_message("Przywrócono domyślne wartości marży.")
+        self._clear_margin_form()
+
+    def _persist_margin_rules(self) -> None:
+        self.margin_rules = self.config.update_margin_rules(self.margin_rules)
+        self._refresh_margin_tree()
+
+    def _clear_margin_form(self) -> None:
+        self.var_margin_quantity.set("")
+        self.var_margin_value.set("")
+        for item in self.margin_tree.selection():
+            self.margin_tree.selection_remove(item)
+
+    def _set_margin_message(self, text: str, error: bool = False) -> None:
+        self.margin_message_var.set(text)
+        self.margin_message_label.configure(foreground="red" if error else "")
 
     def _parse_float(self, var: tk.StringVar, name: str, default: float | None = None) -> float:
         text = str(var.get()).strip().replace(",", ".")
@@ -488,6 +1023,7 @@ class FalaBApp(ttk.Frame):
                 "powrot": powrot,
             },
             "wyniki": wyniki,
+            "margin_rules": self.config.get_margin_rules(),
         }
 
     def _build_print_summary(self) -> str:
@@ -657,41 +1193,75 @@ class FalaBApp(ttk.Frame):
             fmt(transport.get("koszt_calkowity")),
         )
 
+        margin_rules = self.last_results.get("margin_rules") or self.config.get_margin_rules()
+        if margin_rules:
+            for rule in margin_rules:
+                qty_label = "Próg marży"
+                qty_value = rule.get("max_quantity")
+                try:
+                    qty_int = int(float(qty_value))
+                    qty_label = f"Do {qty_int} szt."
+                except (TypeError, ValueError):
+                    pass
+                try:
+                    margin_value = float(rule.get("margin_percent"))
+                    margin_text = f"{margin_value:.2f} %"
+                except (TypeError, ValueError):
+                    margin_text = "-"
+                add_row("Marża", qty_label, margin_text)
+
         csv_lines = ["sep=;", "Sekcja;Parametr;Wartość"]
         csv_lines.extend(";".join(row) for row in rows)
         return "\n".join(csv_lines)
 
     @staticmethod
     def _send_to_printer(text: str) -> None:
-        temp_path = ""
+        suffix = ".txt" if sys.platform.startswith("win") else ".csv"
+        temp_path: Path | None = None
         with tempfile.NamedTemporaryFile(
-            "w", delete=False, encoding="utf-8", suffix=".csv"
+            "w", delete=False, encoding="utf-8", suffix=suffix
         ) as temp_file:
             temp_file.write(text)
-            temp_path = temp_file.name
+            temp_path = Path(temp_file.name)
 
-        def _cleanup(path: str) -> None:
+        def _cleanup(path: Path) -> None:
             try:
-                os.remove(path)
-            except OSError:
+                path.unlink()
+            except FileNotFoundError:
                 pass
 
         try:
             if sys.platform.startswith("win"):
-                if hasattr(os, "startfile"):
-                    os.startfile(temp_path, "print")  # type: ignore[attr-defined]
-                else:
-                    raise RuntimeError("Brak obsługi drukowania w tym systemie.")
+                try:
+                    subprocess.run(["notepad.exe", "/p", str(temp_path)], check=True)
+                except FileNotFoundError as exc:
+                    if hasattr(os, "startfile"):
+                        try:
+                            os.startfile(str(temp_path), "print")  # type: ignore[attr-defined]
+                        except OSError as inner_exc:
+                            raise RuntimeError(
+                                "Nie udało się uruchomić systemowego polecenia drukowania."
+                            ) from inner_exc
+                    else:
+                        raise RuntimeError(
+                            "Nie znaleziono programu Notepad wymaganego do wydruku."
+                        ) from exc
+                except subprocess.CalledProcessError as exc:
+                    raise RuntimeError(
+                        "System Windows zgłosił błąd podczas drukowania."
+                    ) from exc
             elif sys.platform == "darwin":
-                subprocess.run(["lp", temp_path], check=True)
+                subprocess.run(["lp", str(temp_path)], check=True)
             else:
-                subprocess.run(["lpr", temp_path], check=True)
+                subprocess.run(["lpr", str(temp_path)], check=True)
         except FileNotFoundError as exc:
             raise RuntimeError("Nie znaleziono polecenia drukarki w systemie.") from exc
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError("Polecenie drukarki zakończyło się niepowodzeniem.") from exc
         except Exception as exc:
             raise RuntimeError("Nie udało się wysłać danych do drukarki.") from exc
         finally:
-            if temp_path:
+            if temp_path is not None:
                 threading.Timer(10.0, _cleanup, args=(temp_path,)).start()
 
     def print_summary(self) -> None:
