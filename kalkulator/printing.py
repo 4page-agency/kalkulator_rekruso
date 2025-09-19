@@ -11,8 +11,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import tkinter as tk
-
 
 class PrinterError(RuntimeError):
     """Wyjątek zgłaszany, gdy wysyłanie wydruku się nie powiedzie."""
@@ -42,6 +40,9 @@ def build_summary_csv(
         rows.append((section, label, value))
 
     add_row("Informacje", "Nazwa programu", "Kalkulator Rekruso")
+    fala = inputs.get("fala")
+    if fala:
+        add_row("Informacje", "Rodzaj fali", str(fala))
     add_row(
         "Informacje",
         "Data wydruku",
@@ -232,48 +233,6 @@ def print_text_document(content: str, suffix: str = ".txt", *, prefer_notepad: b
             _schedule_cleanup(temp_path)
 
 
-def print_widget_as_image(widget: tk.Widget) -> None:
-    """Tworzy zrzut ekranu wskazanego widżetu i wysyła go na drukarkę."""
-
-    image = _capture_widget_image(widget)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile("wb", delete=False, suffix=".png") as temp_file:
-            image.save(temp_file, format="PNG")
-            temp_path = Path(temp_file.name)
-    except OSError as exc:
-        raise PrinterError("Nie udało się zapisać obrazu tymczasowego.") from exc
-
-    try:
-        _send_to_printer(temp_path, prefer_notepad=False)
-    finally:
-        if temp_path is not None:
-            _schedule_cleanup(temp_path)
-
-
-def _capture_widget_image(widget: tk.Widget):
-    widget.update_idletasks()
-    x = widget.winfo_rootx()
-    y = widget.winfo_rooty()
-    width = widget.winfo_width()
-    height = widget.winfo_height()
-    if width <= 1 or height <= 1:
-        widget.update()
-        width = widget.winfo_width()
-        height = widget.winfo_height()
-    bbox = (int(x), int(y), int(x + width), int(y + height))
-    try:
-        from PIL import ImageGrab
-    except ImportError as exc:
-        raise PrinterError(
-            "Do wykonania zrzutu ekranu wymagany jest pakiet Pillow (PIL)."
-        ) from exc
-    try:
-        return ImageGrab.grab(bbox=bbox)
-    except Exception as exc:  # pragma: no cover - zależne od środowiska
-        raise PrinterError("Nie udało się wykonać zrzutu ekranu.") from exc
-
-
 def _send_to_printer(path: Path, *, prefer_notepad: bool) -> None:
     try:
         if sys.platform.startswith("win"):
@@ -341,5 +300,4 @@ __all__ = [
     "PrinterError",
     "build_summary_csv",
     "print_text_document",
-    "print_widget_as_image",
 ]
