@@ -10,8 +10,8 @@ from .calculations import oblicz_fala_b
 from .config import ConfigManager, DEFAULT_MARGIN_RULES
 from .printing import (
     PrinterError,
-    build_summary_csv,
-    print_text_document,
+    build_summary_pdf,
+    print_pdf_document,
 )
 
 
@@ -438,7 +438,7 @@ class CalculatorTab(ttk.Frame):
 
     def print_summary(self) -> None:
         try:
-            summary = build_summary_csv(
+            summary_pdf = build_summary_pdf(
                 self.last_results,
                 fallback_margin_rules=self.app.config.get_margin_rules(),
             )
@@ -453,7 +453,7 @@ class CalculatorTab(ttk.Frame):
             return
 
         try:
-            print_text_document(summary, suffix=".csv", prefer_notepad=True)
+            print_pdf_document(summary_pdf)
         except PrinterError as exc:
             messagebox.showerror("Błąd drukowania", str(exc))
             return
