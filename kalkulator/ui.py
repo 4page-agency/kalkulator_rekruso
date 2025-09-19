@@ -40,6 +40,51 @@ class CalculatorTab(ttk.Frame):
         self._build_ui()
 
     # ------------------------------------------------------------------
+    # Zmienne interfejsu użytkownika
+    # ------------------------------------------------------------------
+    def _init_variables(self) -> None:
+        """Tworzy wszystkie zmienne używane w obrębie zakładki."""
+
+        # Dane klienta
+        self.var_client_name = tk.StringVar()
+        self.var_client_address = tk.StringVar()
+        self.var_client_nip = tk.StringVar()
+        self.var_client_email = tk.StringVar()
+
+        # Wejściowe parametry kalkulatora
+        self.var_dl = tk.StringVar()
+        self.var_sz = tk.StringVar()
+        self.var_wys = tk.StringVar()
+        self.var_gram = tk.StringVar()
+        self.var_cena_m2 = tk.StringVar()
+        self.var_inne = tk.StringVar()
+        self.var_transport_stawka = tk.StringVar()
+        self.var_transport_km = tk.StringVar()
+        self.var_transport_powrot = tk.BooleanVar(value=True)
+
+        # Wyniki – sekcja minimum produkcyjne i wymiary
+        placeholder = ""
+        self.var_minimum_aq = tk.StringVar(value=placeholder)
+        self.var_minimum_con = tk.StringVar(value=placeholder)
+        self.var_minimum_pg = tk.StringVar(value=placeholder)
+        self.var_wymiar_h12 = tk.StringVar(value=placeholder)
+        self.var_wymiar_i12 = tk.StringVar(value=placeholder)
+        self.var_wymiar_j12 = tk.StringVar(value=placeholder)
+        self.var_paletyzacja_dl = tk.StringVar(value=placeholder)
+        self.var_paletyzacja_sz = tk.StringVar(value=placeholder)
+
+        # Wyniki – sekcja bigowania i podsumowania
+        self.var_bigi_row1 = tk.StringVar(value=placeholder)
+        self.var_bigi_row2 = tk.StringVar(value=placeholder)
+        self.var_bigowanie_row1 = tk.StringVar(value=placeholder)
+        self.var_bigowanie_row2 = tk.StringVar(value=placeholder)
+        self.var_formatka_dims = tk.StringVar(value=placeholder)
+        self.var_costs = tk.StringVar(
+            value="Wprowadź parametry i kliknij \"Policz\", aby zobaczyć wyniki."
+        )
+        self.var_transport_info = tk.StringVar(value=placeholder)
+
+    # ------------------------------------------------------------------
     # Budowanie interfejsu użytkownika
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
